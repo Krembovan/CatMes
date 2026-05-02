@@ -1,6 +1,11 @@
+import eventlet
+eventlet.monkey_patch()  # ЭТО ДОЛЖНО БЫТЬ САМОЙ ПЕРВОЙ СТРОКОЙ
+
 import json, os, time
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, send_from_directory
 from flask_socketio import SocketIO, emit, join_room
+
+# Остальной код...
 import os
 from flask import send_from_directory
 
