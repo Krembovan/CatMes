@@ -2,150 +2,82 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SCAM CHAT</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         :root { --bg: #0f111a; --surface: #1e212b; --primary: #ff4747; --text: #ffffff; --border: rgba(255,255,255,0.05); }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; height: 100vh; overflow: hidden; }
+
+        .app-container { display: flex; height: 100vh; }
+
+        /* Sidebar */
+        .sidebar { width: 300px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .my-profile { padding: 20px; background: rgba(0,0,0,0.2); display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .avatar { width: 40px; height: 40px; border-radius: 50%; background: #3e4147; object-fit: cover; border: 2px solid var(--primary); }
         
-        /* Исправляем высоту body, чтобы контент не схлопывался */
-        body { 
-            background: var(--bg); 
-            color: var(--text); 
-            font-family: 'Inter', sans-serif; 
-            margin: 0; 
-            padding: 0;
-            overflow: hidden; 
-            height: 100vh; /* Растягиваем на всю высоту */
-            width: 100vw;
-        }
+        #room-list { flex: 1; overflow-y: auto; }
+        .room-item { padding: 15px 20px; cursor: pointer; transition: 0.2s; border-bottom: 1px solid var(--border); }
+        .room-item:hover, .room-item.active { background: rgba(255,71,71,0.1); }
 
-        /* Главный контейнер мессенджера */
-        .app-container {
-            display: flex;
-            height: 100vh;
-            width: 100vw;
-        }
+        /* Chat Area */
+        .chat-area { flex: 1; display: flex; flex-direction: column; }
+        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
+        
+        .msg { display: flex; gap: 12px; max-width: 80%; }
+        .msg.my { align-self: flex-end; flex-direction: row-reverse; }
+        .msg-content { background: #2a2d37; padding: 10px 15px; border-radius: 15px; font-size: 0.95rem; }
+        .msg.my .msg-content { background: var(--primary); }
+        .msg-info { font-size: 0.7rem; color: #8e9297; margin-bottom: 4px; }
 
-        /* Боковая панель с чатами */
-        .sidebar {
-            width: 280px;
-            background: var(--surface);
-            border-right: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
-        }
+        .input-area { padding: 20px; background: var(--surface); display: flex; gap: 10px; }
+        input { flex: 1; background: var(--bg); border: 1px solid var(--border); padding: 12px; border-radius: 8px; color: white; outline: none; }
 
-        .sidebar-header {
-            padding: 20px;
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: var(--primary);
-            border-bottom: 1px solid var(--border);
-        }
-
-        .room-item {
-            padding: 15px 20px;
-            cursor: pointer;
-            transition: 0.2s;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .room-item:hover {
-            background: rgba(255,255,255,0.03);
-        }
-
-        /* Основная зона чата */
-        .chat-area {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: var(--bg);
-        }
-
-        #messages {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .input-area {
-            padding: 20px;
-            background: var(--surface);
-            display: flex;
-            gap: 10px;
-        }
-
-        input[type="text"] {
-            flex: 1;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            padding: 12px;
-            border-radius: 8px;
-            color: white;
-            outline: none;
-        }
-
-        /* Твои модальные окна */
-        .modal-overlay { 
-            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); 
-            z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(5px);
-        }
-        .modal-card { 
-            background: var(--surface); padding: 35px; border-radius: 24px; 
-            width: 90%; max-width: 400px; text-align: center; border: 1px solid var(--border);
-        }
-        .btn-row { display: flex; gap: 15px; }
-        .btn { flex: 1; padding: 14px; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; }
-        .btn-gray { background: #3e4147; color: white; }
+        /* Modals */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+        .modal-card { background: var(--surface); padding: 30px; border-radius: 20px; width: 350px; text-align: center; }
+        .btn { padding: 12px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
         .btn-red { background: var(--primary); color: white; }
-
-        /* Контекстное меню */
-        #ctx-menu { 
-            display: none; position: fixed; background: #181922; 
-            border-radius: 12px; padding: 8px; z-index: 10000; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-        .ctx-item { padding: 12px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; color: #ff5c5c; }
+        
+        #ctx-menu { display: none; position: fixed; background: #181922; border-radius: 10px; padding: 8px; z-index: 11000; }
+        .ctx-item { padding: 10px; cursor: pointer; color: var(--primary); border-radius: 5px; }
+        .ctx-item:hover { background: rgba(255,255,255,0.05); }
     </style>
 </head>
 <body onclick="closeAllMenus()">
 
+    <div id="auth-modal" class="modal-overlay" style="display: flex;">
+        <div class="modal-card">
+            <h2 style="color: var(--primary);">SCAM LOGIN</h2>
+            <input type="text" id="auth-nick" placeholder="Никнейм" style="margin-bottom: 10px; width: 90%;">
+            <input type="password" id="auth-pass" placeholder="Пароль" style="margin-bottom: 10px; width: 90%;">
+            <button class="btn btn-red" onclick="login()">ВОЙТИ / СОЗДАТЬ</button>
+        </div>
+    </div>
+
     <div class="app-container">
         <div class="sidebar">
-            <div class="sidebar-header">SCAM CHAT</div>
-            <div id="room-list">
-                <div class="room-item" oncontextmenu="onRoomContextMenu(event, 'Общий')">
-                    # Общий чат
-                </div>
+            <div class="my-profile" onclick="openProfile()">
+                <img src="" id="my-ava" class="avatar">
+                <div id="my-nick-display">Загрузка...</div>
             </div>
+            <div id="room-list"></div>
         </div>
 
         <div class="chat-area">
-            <div id="messages">
-                <div style="color: #949ba4; font-size: 0.9rem;">Добро пожаловать. Нажмите ПКМ на чат слева, чтобы вызвать меню удаления.</div>
-            </div>
+            <div id="messages"></div>
             <div class="input-area">
-                <input type="text" placeholder="Написать сообщение...">
-                <button class="btn btn-red" style="flex: 0; width: auto; padding: 10px 20px;">Send</button>
+                <input type="text" id="m-input" placeholder="Введите сообщение...">
+                <button class="btn btn-red" style="width: auto; margin: 0;" onclick="send()">Send</button>
             </div>
         </div>
     </div>
 
     <div id="delete-modal" class="modal-overlay">
-        <div class="modal-card" onclick="event.stopPropagation()">
-            <h2>Удалить чат?</h2>
-            <p>Вы уверены? История переписки исчезнет навсегда.</p>
-            <label style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 20px; cursor: pointer;">
-                <input type="checkbox" id="delete-for-all-cb" style="width: 18px; height: 18px;">
-                <span>Удалить для собеседника</span>
-            </label>
-            <div class="btn-row">
-                <button class="btn btn-gray" onclick="closeModal()">ОТМЕНА</button>
-                <button class="btn btn-red" onclick="confirmDelete()">УДАЛИТЬ</button>
-            </div>
+        <div class="modal-card">
+            <h3>Удалить чат?</h3>
+            <label><input type="checkbox" id="del-all"> Для всех</label><br><br>
+            <button class="btn btn-red" onclick="confirmDelete()">УДАЛИТЬ</button>
+            <button class="btn" style="background: #3e4147; color: white;" onclick="closeModal()">ОТМЕНА</button>
         </div>
     </div>
 
@@ -154,49 +86,97 @@
     </div>
 
     <script>
-        const socket = io({ transports: ["websocket", "polling"] });
-        let selectedRoom = null;
+        const socket = io();
+        let myData = null;
+        let selectedRoom = "Общий";
 
-        function closeAllMenus() {
-            document.getElementById('ctx-menu').style.display = 'none';
+        // --- Авторизация ---
+        function login() {
+            const nick = document.getElementById('auth-nick').value;
+            const pass = document.getElementById('auth-pass').value;
+            socket.emit('auth', { nick, password: pass });
         }
 
-        function onRoomContextMenu(e, roomId) {
-            e.preventDefault();
-            e.stopPropagation();
-            selectedRoom = roomId;
-            const menu = document.getElementById('ctx-menu');
-            menu.style.display = 'block';
-            menu.style.left = e.pageX + 'px';
-            menu.style.top = e.pageY + 'px';
-        }
+        socket.on('auth_result', (data) => {
+            if (data.success) {
+                myData = data.user;
+                document.getElementById('auth-modal').style.display = 'none';
+                document.getElementById('my-nick-display').innerText = myData.nick;
+                document.getElementById('my-ava').src = myData.avatar || 'https://i.pravatar.cc/100';
+                socket.emit('get_rooms');
+                switchRoom("Общий");
+            } else { alert(data.error); }
+        });
 
-        function openModal() {
-            document.getElementById('delete-modal').style.display = 'flex';
-            closeAllMenus();
-        }
-
-        function closeModal() {
-            document.getElementById('delete-modal').style.display = 'none';
-        }
-
-        function confirmDelete() {
-            const forAll = document.getElementById('delete-for-all-cb').checked;
-            socket.emit('delete_chat', {
-                chat_id: selectedRoom,
-                delete_for_all: forAll
+        // --- Комнаты ---
+        socket.on('room_list', (rooms) => {
+            const list = document.getElementById('room-list');
+            list.innerHTML = `<div class="room-item active" oncontextmenu="onRoomContextMenu(event, 'Общий')" onclick="switchRoom('Общий')"># Общий чат</div>`;
+            Object.keys(rooms).forEach(id => {
+                list.innerHTML += `<div class="room-item" oncontextmenu="onRoomContextMenu(event, '${id}')" onclick="switchRoom('${id}')"># ${rooms[id].name}</div>`;
             });
+        });
+
+        function switchRoom(id) {
+            selectedRoom = id;
+            document.querySelectorAll('.room-item').forEach(el => el.classList.remove('active'));
+            document.getElementById('messages').innerHTML = '';
+            socket.emit('join', { room: id });
+        }
+
+        // --- Сообщения ---
+        function send() {
+            const val = document.getElementById('m-input').value;
+            if (!val) return;
+            socket.emit('message', {
+                room: selectedRoom,
+                text: val,
+                user: myData.nick,
+                avatar: myData.avatar
+            });
+            document.getElementById('m-input').value = '';
+        }
+
+        socket.on('message', (msg) => {
+            if (msg.room !== selectedRoom) return;
+            renderMsg(msg);
+        });
+
+        socket.on('history', (hist) => {
+            hist.forEach(renderMsg);
+        });
+
+        function renderMsg(msg) {
+            const div = document.createElement('div');
+            div.className = `msg ${msg.user === myData.nick ? 'my' : ''}`;
+            div.innerHTML = `
+                <img src="${msg.avatar || 'https://i.pravatar.cc/100'}" class="avatar" style="width:30px; height:30px;">
+                <div class="msg-body">
+                    <div class="msg-info">${msg.user}</div>
+                    <div class="msg-content">${msg.text}</div>
+                </div>
+            `;
+            document.getElementById('messages').appendChild(div);
+            document.getElementById('messages').scrollTop = 99999;
+        }
+
+        // --- Удаление (твои функции) ---
+        let roomToDel = null;
+        function onRoomContextMenu(e, id) {
+            e.preventDefault(); e.stopPropagation();
+            roomToDel = id;
+            const m = document.getElementById('ctx-menu');
+            m.style.display = 'block'; m.style.left = e.pageX + 'px'; m.style.top = e.pageY + 'px';
+        }
+        function closeAllMenus() { document.getElementById('ctx-menu').style.display = 'none'; }
+        function openModal() { document.getElementById('delete-modal').style.display = 'flex'; }
+        function closeModal() { document.getElementById('delete-modal').style.display = 'none'; }
+        function confirmDelete() {
+            socket.emit('delete_chat', { chat_id: roomToDel, delete_for_all: document.getElementById('del-all').checked });
             closeModal();
         }
 
-        socket.on('chat_deleted_globally', (data) => {
-            alert("Чат был удален для всех");
-            location.reload();
-        });
-
-        socket.on('chat_hidden_locally', () => {
-            location.reload();
-        });
+        socket.on('chat_deleted_globally', () => location.reload());
     </script>
 </body>
 </html>
