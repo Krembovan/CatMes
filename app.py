@@ -42,10 +42,6 @@ def save_db(key, data):
     with open(DB_FILES[key], 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
 @socketio.on('join')
 def on_join(data):
     room = data.get('room')
