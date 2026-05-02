@@ -3,6 +3,28 @@ import os
 import time
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit, join_room
+import threading
+import time
+import requests
+import os
+
+def keep_alive():
+    # Даем серверу 30 секунд, чтобы просто запуститься перед первым пингом
+    time.sleep(30)
+    while True:
+        try:
+            # Render сам подставит URL в переменную окружения, либо впиши свою ссылку
+            url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}"
+            requests.get(url)
+            print("Пинг выполнен: сервер не спит!")
+        except Exception as e:
+            print(f"Ошибка пинга: {e}")
+        
+        # Спим 10 минут (600 секунд)
+        time.sleep(600)
+
+# Запуск фонового потока
+threading.Thread(target=keep_alive, daemon=True).start()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_secret_key_1337'
