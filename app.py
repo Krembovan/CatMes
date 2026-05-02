@@ -1,24 +1,28 @@
 import eventlet
-eventlet.monkey_patch()  # ЭТО ДОЛЖНО БЫТЬ САМОЙ ПЕРВОЙ СТРОКОЙ
+eventlet.monkey_patch()  # Это всегда самое первое
 
 import json, os, time
 from flask import Flask, render_template, request, send_from_directory
 from flask_socketio import SocketIO, emit, join_room
 
-# Остальной код...
-import os
-from flask import send_from_directory
-
-@app.route('/favicon.ico')
-def favicon():
-    return send_from_directory(os.path.join(app.root_path, 'static'),
-                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
-
+# 1. Сначала создаем объект приложения
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_1337_prod'
-# Render требует eventlet для стабильных веб-сокетов
+
+# 2. Теперь, когда 'app' существует, можно вешать на него маршруты
+@app.route('/favicon.ico')
+def favicon():
+    # Проверка на наличие папки static, чтобы не было ошибок
+    static_dir = os.path.join(app.root_path, 'static')
+    if not os.path.exists(static_dir):
+        os.makedirs(static_dir)
+    return send_from_directory(static_dir,
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
+# 3. Инициализируем сокеты
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
+# 4. Настройки путей к БД
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILES = {
     'history': os.path.join(BASE_DIR, 'history.json'),
