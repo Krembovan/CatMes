@@ -6,7 +6,7 @@ from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'skam_forever'
+app.config['SECRET_KEY'] = 'skam_forever_friends'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,58 +33,65 @@ def index():
 
 @socketio.on('auth')
 def handle_auth(data):
-    username = data.get('username', '').strip().lower() # Уникальный ID
-    display_name = data.get('display_name', '').strip() or username
+    un = data.get('username', '').strip().lower()
+    dn = data.get('display_name', '').strip() or un
     pwd = data.get('password', '')
-    
     users = load_db('users')
     
-    if username in users:
-        if users[username]['pass'] == pwd:
-            emit('auth_result', {'success': True, 'user': users[username]})
+    if un in users:
+        if users[un]['pass'] == pwd:
+            user_data = users[un]
+            user_data.setdefault('friends', [])
+            user_data.setdefault('requests', [])
+            emit('auth_result', {'success': True, 'user': user_data})
         else:
             emit('auth_result', {'success': False, 'error': 'Неверный пароль'})
     else:
-        # Регистрация нового
-        new_user = {
-            'username': username,
-            'display_name': display_name,
-            'pass': pwd,
-            'avatar': 'https://i.pravatar.cc/150?u=' + username,
-            'bio': 'Новый пользователь SKAM',
-            'friends': [],
-            'requests': []
-        }
-        users[username] = new_user
+        new_user = {'username': un, 'display_name': dn, 'pass': pwd, 
+                    'avatar': f'https://i.pravatar.cc/150?u={un}', 
+                    'bio': 'Пользователь SKAM', 'friends': [], 'requests': []}
+        users[un] = new_user
         save_db('users', users)
         emit('auth_result', {'success': True, 'user': new_user})
 
-@socketio.on('update_profile')
-def update_profile(data):
+@socketio.on('send_friend_request')
+def handle_friend_request(data):
+    my_un = data.get('my_username').lower()
+    target_un = data.get('target_username').lower().replace('@', '')
     users = load_db('users')
-    old_un = data.get('old_username').lower()
-    new_un = data.get('new_username').lower().strip()
-    
-    if old_un in users:
-        # Если меняется юзернейм, проверяем уникальность
-        if old_un != new_un and new_un in users:
-            emit('error', {'msg': 'Этот юзернейм уже занят!'})
-            return
-        
-        user_data = users.pop(old_un)
-        user_data['username'] = new_un
-        user_data['display_name'] = data.get('display_name')
-        user_data['avatar'] = data.get('avatar')
-        user_data['bio'] = data.get('bio')
-        
-        users[new_un] = user_data
+
+    if target_un in users and target_un != my_un:
+        if my_un not in users[target_un]['friends'] and my_un not in users[target_un]['requests']:
+            users[target_un]['requests'].append(my_un)
+            save_db('users', users)
+            emit('friend_msg', {'text': 'Запрос отправлен!'}, room=request.sid)
+    else:
+        emit('friend_msg', {'text': 'Пользователь не найден'}, room=request.sid)
+
+@socketio.on('accept_friend')
+def handle_accept(data):
+    my_un = data.get('my_username').lower()
+    target_un = data.get('target_username').lower()
+    users = load_db('users')
+
+    if target_un in users[my_un]['requests']:
+        users[my_un]['requests'].remove(target_un)
+        if target_un not in users[my_un]['friends']: users[my_un]['friends'].append(target_un)
+        if my_un not in users[target_un]['friends']: users[target_un]['friends'].append(my_un)
         save_db('users', users)
-        emit('auth_result', {'success': True, 'user': user_data})
+        
+        # Создаем запись о привате
+        reg = load_db('registry')
+        chat_id = f"priv_{min(my_un, target_un)}_{max(my_un, target_un)}"
+        reg[chat_id] = {"name": f"🤝 {target_un}", "type": "private"}
+        save_db('registry', reg)
+        
+        emit('auth_result', {'success': True, 'user': users[my_un]})
+        emit('room_list', reg, broadcast=True)
 
 @socketio.on('message')
 def handle_msg(data):
     room = data.get('room')
-    if not room: return
     data['timestamp'] = time.time()
     h = load_db('history')
     h.append(data)
@@ -94,10 +101,9 @@ def handle_msg(data):
 @socketio.on('join')
 def on_join(data):
     room = data.get('room')
-    if room:
-        join_room(room)
-        hist = [m for m in load_db('history') if m.get('room') == room]
-        emit('history', hist)
+    join_room(room)
+    hist = [m for m in load_db('history') if m.get('room') == room]
+    emit('history', hist)
 
 @socketio.on('get_rooms')
 def get_rooms():
