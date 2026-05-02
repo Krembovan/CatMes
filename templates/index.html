@@ -6,262 +6,219 @@
     <title>СКAM 1.8.1 PRO</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
     <style>
-	/* Контекстное меню */
-.context-menu {
-    display: none;
-    position: absolute;
-    background: #2f3136;
-    border: 1px solid #4f545c;
-    border-radius: 4px;
-    z-index: 1000;
-    padding: 5px 0;
-    min-width: 150px;
-}
+        :root { 
+            --bg: #0f111a; 
+            --surface: #1a1d2e; 
+            --primary: #7289da; 
+            --text: #ffffff; 
+            --danger: #ff4747; 
+            --online: #43b581; 
+            --gray: #949ba4; 
+        }
 
-.context-menu div {
-    padding: 8px 15px;
-    cursor: pointer;
-    color: white;
-}
-
-.context-menu div:hover {
-    background: #4752c4;
-}
-
-/* Модальное окно */
-.modal {
-    display: none; 
-    position: fixed; 
-    z-index: 2000; 
-    left: 0; top: 0; width: 100%; height: 100%; 
-    background: rgba(0,0,0,0.7); 
-    align-items: center; 
-    justify-content: center;
-}
-
-.modal-content {
-    background: #36393f;
-    padding: 20px;
-    border-radius: 8px;
-    width: 320px;
-    color: white;
-    text-align: center;
-}
-
-.modal-buttons {
-    margin-top: 20px;
-    display: flex;
-    justify-content: space-around;
-}
-
-.btn-confirm { background: #ed4245; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
-.btn-cancel { background: #4f545c; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
-
-/* Галочка */
-.checkbox-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    margin-top: 15px;
-    font-size: 14px;
-    cursor: pointer;
-}
-
-        :root { --bg: #0f111a; --surface: #1a1d2e; --primary: #7289da; --text: #ffffff; --danger: #ff4747; --online: #43b581; --gray: #949ba4; }
-        @keyframes gradientBG { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
         body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; }
         
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 4000; backdrop-filter: blur(5px); }
-        #auth-overlay { background: linear-gradient(-45deg, #0f111a, #1a1d2e, #0b0d14, #23273a); background-size: 400% 400%; animation: gradientBG 15s ease infinite; z-index: 5000; }
-        .modal-box { background: var(--surface); padding: 30px; border-radius: 24px; display: flex; flex-direction: column; gap: 15px; width: 90%; max-width: 350px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05); }
+        /* Стили контекстного меню */
+        .context-menu {
+            display: none;
+            position: fixed;
+            background: #1a1d2e;
+            border: 1px solid #2d314d;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            z-index: 6000;
+            overflow: hidden;
+            width: 180px;
+        }
 
+        .menu-item {
+            padding: 12px 15px;
+            cursor: pointer;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: 0.2s;
+        }
+
+        .menu-item:hover { background: rgba(255,255,255,0.1); }
+        .menu-item.danger { color: var(--danger); }
+
+        /* Модальные окна */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 5000; backdrop-filter: blur(5px); }
+        .modal-box { background: var(--surface); padding: 30px; border-radius: 24px; display: flex; flex-direction: column; gap: 15px; width: 90%; max-width: 350px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05); text-align: center; }
+
+        /* Интерфейс */
         .sidebar { width: 300px; background: #0b0d14; border-right: 1px solid #2d314d; display: flex; flex-direction: column; }
-        @media (max-width: 600px) { .sidebar { width: 80px; } .sidebar b, .sidebar span, .sidebar #my-nick-label { display: none; } .dots-btn { right: 5px !important; } }
+        @media (max-width: 600px) { .sidebar { width: 80px; } .sidebar b, .sidebar span, .sidebar #my-nick-label { display: none; } }
 
         .rooms-list { flex: 1; overflow-y: auto; padding: 10px; }
         .room-item { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; margin-bottom: 8px; transition: 0.2s; color: var(--gray); }
         .room-item:hover { background: rgba(114, 137, 218, 0.1); color: white; }
         .room-item.active { background: var(--primary); color: white; }
 
-        /* Статичные три точки для мобилок и ПК */
-        .dots-btn { position: absolute; right: 12px; padding: 8px; font-weight: bold; font-size: 1.4rem; line-height: 0.5; color: var(--gray); z-index: 10; border-radius: 8px; }
+        .dots-btn { position: absolute; right: 12px; padding: 5px; font-size: 1.2rem; color: var(--gray); z-index: 10; cursor: pointer; }
         .room-item.active .dots-btn { color: white; }
-        .dots-btn:active { background: rgba(255,255,255,0.1); }
-
-        /* Контекстное меню */
-        #context-menu { position: fixed; background: #1a1d2e; border: 1px solid #2d314d; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); display: none; z-index: 6000; overflow: hidden; width: 180px; }
-        .menu-item { padding: 15px; font-size: 1rem; cursor: pointer; transition: 0.2s; color: var(--text); border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .menu-item:last-child { border: none; }
-        .menu-item:active { background: rgba(255,255,255,0.1); }
-        .menu-item.danger { color: var(--danger); }
 
         .avatar { width: 42px; height: 42px; border-radius: 50%; background: #2d314d; object-fit: cover; flex-shrink: 0; }
-        .status-dot { width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid #0b0d14; position: absolute; bottom: 12px; left: 44px; background: var(--gray); }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #0b0d14; position: absolute; bottom: 12px; left: 44px; background: var(--gray); }
         .status-dot.online { background: var(--online); }
         
-        .sidebar-footer { padding: 15px; border-top: 1px solid #2d314d; background: #0b0d14; }
-        .profile-btn { width: 100%; padding: 10px; background: #1a1d2e; color: white; border: 1px solid #2d314d; border-radius: 12px; cursor: pointer; display: flex; align-items: center; gap: 10px; }
-
         .main { flex: 1; display: flex; flex-direction: column; background: #0f111a; min-width: 0; }
         header { padding: 10px 20px; background: rgba(26, 29, 46, 0.8); display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #2d314d; min-height: 60px; }
-        #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 5px; }
-        .msg-container { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 8px; }
-        .msg { max-width: 85%; padding: 10px 15px; border-radius: 16px; background: var(--surface); position: relative; word-wrap: break-word; }
-        .msg.own { background: var(--primary); color: white; margin-left: auto; }
+        #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
         
+        .msg-container { display: flex; align-items: flex-end; gap: 8px; }
+        .msg { max-width: 80%; padding: 10px 15px; border-radius: 16px; background: var(--surface); word-wrap: break-word; text-align: left; }
+        .msg.own { background: var(--primary); color: white; margin-left: auto; }
+
         .input-area { padding: 15px; background: var(--surface); display: flex; gap: 10px; border-top: 1px solid #2d314d; }
         input, textarea { background: #0b0d14; border: 1px solid #2d314d; color: white; padding: 12px; border-radius: 12px; outline: none; width: 100%; }
-        .primary-btn { background: var(--primary); color: white; border: none; border-radius: 12px; padding: 12px; cursor: pointer; font-weight: bold; }
+        .primary-btn { background: var(--primary); color: white; border: none; border-radius: 12px; padding: 12px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .primary-btn:hover { opacity: 0.8; }
+        
+        .checkbox-container { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0; font-size: 14px; cursor: pointer; }
     </style>
 </head>
 <body onclick="hideContextMenu()">
-    <div id="auth-overlay" class="modal-overlay"><div class="modal-box">
-        <h2 style="color:var(--primary); text-align:center; margin:0;">СКAM 1.8.1</h2>
-        <input type="text" id="auth-nick" placeholder="Логин"><input type="password" id="auth-pass" placeholder="Пароль">
-        <button class="primary-btn" id="login-btn">ВОЙТИ</button><div id="auth-error" style="color:var(--danger); font-size:0.8rem; text-align:center;"></div>
-    </div></div>
 
-<div id="context-menu" class="context-menu">
-    <div onclick="openDeleteModal()" style="color: #ed4245;">
-        <i class="fas fa-trash"></i> Удалить чат
+    <div id="auth-overlay" class="modal-overlay">
+        <div class="modal-box">
+            <h2 style="color:var(--primary); margin:0;">СКAM 1.8.1</h2>
+            <input type="text" id="auth-nick" placeholder="Логин">
+            <input type="password" id="auth-pass" placeholder="Пароль">
+            <button class="primary-btn" id="login-btn">ВОЙТИ</button>
+            <div id="auth-error" style="color:var(--danger); font-size:0.8rem;"></div>
+        </div>
     </div>
-</div>
 
-    <div id="profile-modal" class="modal-overlay" style="display:none;"><div class="modal-box">
-        <h3>Мой профиль</h3>
-        <div style="display:flex; align-items:center; gap:15px;"><img id="p-avatar-preview" class="avatar" style="width:70px; height:70px;"><input type="text" id="p-avatar-url" placeholder="URL аватарки"></div>
-        <input type="text" id="p-display" placeholder="Имя"><input type="text" id="p-username" placeholder="@username"><textarea id="p-bio" placeholder="О себе..."></textarea>
-        <button class="primary-btn" onclick="saveProfile()">СОХРАНИТЬ</button><button class="primary-btn" style="background:#444;" onclick="closeProfile()">ЗАКРЫТЬ</button>
-        <div style="color:var(--danger); cursor:pointer; text-align:center; margin-top:10px;" onclick="logout()">Выйти</div>
-    </div></div>
+    <div id="context-menu" class="context-menu">
+        <div class="menu-item danger" onclick="openDeleteModal()">
+            <i class="fas fa-trash"></i> Удалить чат
+        </div>
+    </div>
 
-    <div id="view-profile-modal" class="modal-overlay" style="display:none;"><div class="modal-box">
-        <h3 id="v-display" style="margin:0"></h3>
-        <div style="text-align:center; margin: 15px 0;"><img id="v-avatar" class="avatar" style="width:100px; height:100px;"><div id="v-status" style="font-size:0.8rem; margin-top:5px;"></div></div>
-        <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px;"><div id="v-username" style="color: var(--primary); font-weight: 600;"></div><div id="v-bio" style="font-size: 0.9rem; color: var(--gray);"></div></div>
-        <button class="primary-btn" onclick="document.getElementById('view-profile-modal').style.display='none'">ЗАКРЫТЬ</button>
-    </div></div>
+    <div id="delete-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-box">
+            <h3>Удалить чат?</h3>
+            <p style="color: var(--gray); font-size: 0.9rem;">Вы уверены, что хотите удалить историю переписки?</p>
+            <label class="checkbox-container">
+                <input type="checkbox" id="delete-for-all">
+                <span>Удалить для собеседника</span>
+            </label>
+            <div style="display:flex; gap:10px; margin-top:10px;">
+                <button class="primary-btn" style="flex:1; background:#444;" onclick="closeDeleteModal()">ОТМЕНА</button>
+                <button class="primary-btn" style="flex:1; background:var(--danger);" onclick="confirmDelete()">УДАЛИТЬ</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-profile-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-box">
+            <h3 id="v-display" style="margin:0"></h3>
+            <img id="v-avatar" class="avatar" style="width:100px; height:100px; margin:15px auto;">
+            <div id="v-status" style="font-size:0.8rem;"></div>
+            <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px; margin: 10px 0;">
+                <div id="v-username" style="color: var(--primary); font-weight: 600;"></div>
+                <div id="v-bio" style="font-size: 0.9rem; color: var(--gray);"></div>
+            </div>
+            <button class="primary-btn" onclick="document.getElementById('view-profile-modal').style.display='none'">ЗАКРЫТЬ</button>
+        </div>
+    </div>
+
+    <div id="profile-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-box">
+            <h3>Мой профиль</h3>
+            <img id="p-avatar-preview" class="avatar" style="width:70px; height:70px; margin:0 auto;">
+            <input type="text" id="p-avatar-url" placeholder="URL аватарки">
+            <input type="text" id="p-display" placeholder="Имя">
+            <input type="text" id="p-username" placeholder="@username">
+            <textarea id="p-bio" placeholder="О себе..."></textarea>
+            <button class="primary-btn" onclick="saveProfile()">СОХРАНИТЬ</button>
+            <button class="primary-btn" style="background:#444;" onclick="closeProfile()">ЗАКРЫТЬ</button>
+            <div style="color:var(--danger); cursor:pointer; margin-top:10px;" onclick="logout()">Выйти из аккаунта</div>
+        </div>
+    </div>
 
     <div class="sidebar">
-        <div style="padding:20px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1a1d2e;"><b style="color:var(--gray); font-size:0.7rem;">ЧАТЫ</b><span onclick="createPrivateChat()" style="cursor:pointer; color:var(--primary); font-size:1.8rem;">+</span></div>
+        <div style="padding:20px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1a1d2e;">
+            <b style="color:var(--gray); font-size:0.7rem;">ЧАТЫ</b>
+            <span onclick="createPrivateChat()" style="cursor:pointer; color:var(--primary); font-size:1.8rem;">+</span>
+        </div>
         <div class="rooms-list" id="rooms-list"></div>
-        <div class="sidebar-footer"><button class="profile-btn" onclick="openProfile()"><img id="my-avatar-small" class="avatar" style="width:28px; height:28px;"><span id="my-nick-label">...</span></button></div>
+        <div style="padding: 15px; background: #0b0d14; border-top: 1px solid #2d314d;">
+            <button class="primary-btn" style="width:100%; display:flex; align-items:center; gap:10px; background:#1a1d2e;" onclick="openProfile()">
+                <img id="my-avatar-small" class="avatar" style="width:24px; height:24px;">
+                <span id="my-nick-label">Загрузка...</span>
+            </button>
+        </div>
     </div>
 
     <div class="main">
-        <header><img id="chat-header-avatar" class="avatar" style="display:none; cursor:pointer; width:36px; height:36px;" onclick="viewCurrentPartner()"><div><div id="room-title" style="font-weight:600; font-size:1rem; cursor:pointer;" onclick="viewCurrentPartner()">Выберите чат</div><div id="typing-indicator" style="font-size:0.7rem; color:var(--primary); min-height:1em;"></div></div></header>
+        <header>
+            <img id="chat-header-avatar" class="avatar" style="display:none; cursor:pointer; width:36px; height:36px;" onclick="viewCurrentPartner()">
+            <div>
+                <div id="room-title" style="font-weight:600;" onclick="viewCurrentPartner()">Выберите чат</div>
+                <div id="typing-indicator" style="font-size:0.7rem; color:var(--primary); height:1em;"></div>
+            </div>
+        </header>
         <div id="chat"></div>
-        <div class="input-area"><input type="text" id="msg" placeholder="Сообщение..." oninput="handleTyping()"><button class="primary-btn" onclick="send()" style="width:50px;">></button></div>
+        <div class="input-area">
+            <input type="text" id="msg" placeholder="Сообщение..." oninput="handleTyping()">
+            <button class="primary-btn" onclick="send()" style="width:60px;"><i class="fas fa-paper-plane"></i></button>
+        </div>
     </div>
 
-<script>
-// 1. Создаем переменную для хранения ID чата
-let currentChatId = null; 
+    <script>
+        const socket = io(); // Инициализация сокета СРАЗУ
+        let currentRoom = 'Общий', myData = {}, typingTimeout, currentPartnerNick = null, currentChatId = null;
 
-// Слушаем сервер: если чат удален для всех
-socket.on('chat_deleted_globally', function(data) {
-    const chatElement = document.getElementById('chat-' + data.chat_id);
-    if (chatElement) chatElement.remove();
-    alert("Чат был удален для всех участников");
-});
-
-// Если скрыто только для тебя
-socket.on('chat_hidden_locally', function(data) {
-    location.reload(); 
-});
-
-// Показать меню при клике на три точки
-function showMenu(event, chatId) {
-    event.preventDefault(); // Чтобы не вылезало системное меню
-    event.stopPropagation();
-    
-    currentChatId = chatId; 
-    
-    const menu = document.getElementById('context-menu');
-    menu.style.display = 'block';
-    
-    // Позиционируем меню
-    menu.style.left = event.pageX + 'px';
-    menu.style.top = event.pageY + 'px';
-}
-
-// Закрывать меню при клике в любое место
-document.addEventListener('click', () => {
-    const menu = document.getElementById('context-menu');
-    if (menu) menu.style.display = 'none';
-});
-
-function openDeleteModal() {
-    document.getElementById('delete-modal').style.display = 'flex';
-    document.getElementById('context-menu').style.display = 'none';
-}
-
-function closeDeleteModal() {
-    document.getElementById('delete-modal').style.display = 'none';
-}
-
-function confirmDelete() {
-    const deleteAll = document.getElementById('delete-for-all').checked;
-    
-    if (currentChatId) {
-        socket.emit('delete_chat', {
-            chat_id: currentChatId,
-            delete_for_all: deleteAll
-        });
-    }
-    closeDeleteModal();
-}
-</script>
-
-        const socket = io();
-        let currentRoom = 'Общий', myData = {}, typingTimeout, currentPartnerNick = null, selectedRoomForMenu = null;
-
-        window.onload = () => { const n = localStorage.getItem('skam_nick'), p = localStorage.getItem('skam_pass'); if(n && p) socket.emit('auth', {nick: n, password: p}); };
-        document.getElementById('login-btn').onclick = () => { 
-            const n = document.getElementById('auth-nick').value.trim(), p = document.getElementById('auth-pass').value.trim(); 
-            if(n && p) { localStorage.setItem('skam_nick', n); localStorage.setItem('skam_pass', p); socket.emit('auth', {nick: n, password: p}); } 
+        // --- ЛОГИКА ВХОДА ---
+        window.onload = () => { 
+            const n = localStorage.getItem('skam_nick'), p = localStorage.getItem('skam_pass'); 
+            if(n && p) socket.emit('auth', {nick: n, password: p}); 
         };
 
-        socket.on('auth_result', (res) => { if(res.success) { myData = res.user_data; document.getElementById('auth-overlay').style.display = 'none'; updateMyUI(); socket.emit('user_online', {nick: myData.display}); switchRoom('Общий'); } else document.getElementById('auth-error').innerText = res.error; });
+        document.getElementById('login-btn').onclick = () => { 
+            const n = document.getElementById('auth-nick').value.trim(), p = document.getElementById('auth-pass').value.trim(); 
+            if(n && p) { 
+                localStorage.setItem('skam_nick', n); 
+                localStorage.setItem('skam_pass', p); 
+                socket.emit('auth', {nick: n, password: p}); 
+            } 
+        };
 
-        function updateMyUI() { const av = myData.avatar && myData.avatar.includes('http') ? myData.avatar : 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + myData.display; document.getElementById('my-avatar-small').src = av; document.getElementById('my-nick-label').innerText = myData.display; }
-        function openProfile() { document.getElementById('p-display').value = myData.display; document.getElementById('p-avatar-url').value = myData.avatar; document.getElementById('p-avatar-preview').src = myData.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + myData.display; document.getElementById('p-username').value = '@' + (myData.username || ''); document.getElementById('p-bio').value = myData.bio || ''; document.getElementById('profile-modal').style.display = 'flex'; }
-        function closeProfile() { document.getElementById('profile-modal').style.display = 'none'; }
-        function saveProfile() { socket.emit('update_profile', { my_nick: myData.display, new_display: document.getElementById('p-display').value.trim(), new_avatar: document.getElementById('p-avatar-url').value.trim(), new_bio: document.getElementById('p-bio').value.trim(), new_username: document.getElementById('p-username').value.trim() }); closeProfile(); }
+        socket.on('auth_result', (res) => { 
+            if(res.success) { 
+                myData = res.user_data; 
+                document.getElementById('auth-overlay').style.display = 'none'; 
+                updateMyUI(); 
+                socket.emit('user_online', {nick: myData.display}); 
+                switchRoom('Общий'); 
+            } else {
+                document.getElementById('auth-error').innerText = res.error; 
+            }
+        });
 
+        // --- УПРАВЛЕНИЕ ЧАТАМИ ---
         socket.on('init_chats', (chats) => { 
             const list = document.getElementById('rooms-list'); 
             list.innerHTML = `<div id="item-Общий" class="room-item ${currentRoom === 'Общий' ? 'active' : ''}" onclick="switchRoom('Общий')"><div class="avatar" style="display:flex; align-items:center; justify-content:center; background:var(--primary); color:white;">#</div><b>Общий чат</b></div>`;
             chats.forEach(c => { 
                 const rid = 'direct_' + [myData.display.toLowerCase(), c.lower].sort().join('_'); 
-                const av = c.avatar && c.avatar.includes('http') ? c.avatar : 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + c.display;
-                list.innerHTML += `<div id="item-${rid}" class="room-item ${currentRoom === rid ? 'active' : ''}" onclick="switchRoom('${rid}', '${c.display}', '${av}', '${c.lower}')">
-                    <img class="avatar" src="${av}"><div class="status-dot ${c.online ? 'online' : ''}"></div><div style="font-weight:600;">${c.display}</div>
-                    <div class="dots-btn" onclick="showContextMenu(event, '${rid}')">⋮</div>
-                </div>`; 
+                const av = c.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + c.display;
+                list.innerHTML += `
+                    <div id="item-${rid}" class="room-item ${currentRoom === rid ? 'active' : ''}" onclick="switchRoom('${rid}', '${c.display}', '${av}', '${c.lower}')">
+                        <img class="avatar" src="${av}">
+                        <div class="status-dot ${c.online ? 'online' : ''}"></div>
+                        <div style="font-weight:600; flex:1;">${c.display}</div>
+                        <div class="dots-btn" onclick="showMenu(event, '${rid}')">⋮</div>
+                    </div>`; 
             });
         });
-
-        function showContextMenu(e, rid) {
-            e.stopPropagation();
-            selectedRoomForMenu = rid;
-            const menu = document.getElementById('context-menu');
-            menu.style.display = 'block';
-            // Умное позиционирование меню
-            let x = e.clientX, y = e.clientY;
-            if (x + 180 > window.innerWidth) x -= 180;
-            if (y + 100 > window.innerHeight) y -= 100;
-            menu.style.left = x + 'px';
-            menu.style.top = y + 'px';
-        }
-
-        function hideContextMenu() { document.getElementById('context-menu').style.display = 'none'; }
-        function execHide() { if(selectedRoomForMenu) { socket.emit('hide_chat', {my_nick: myData.display, room_id: selectedRoomForMenu}); if(currentRoom === selectedRoomForMenu) switchRoom('Общий'); } }
-        function execDelete() { if(selectedRoomForMenu && confirm('Удалить всё? Это нельзя отменить.')) { socket.emit('delete_chat_history', {room_id: selectedRoomForMenu}); } }
-
-        socket.on('chat_deleted', (d) => { if(currentRoom === d.room_id) { document.getElementById('chat').innerHTML = ''; } });
 
         function switchRoom(rid, title = 'Общий', avatar = '', partnerNick = null) { 
             currentRoom = rid; currentPartnerNick = partnerNick;
@@ -270,60 +227,97 @@ function confirmDelete() {
             document.getElementById('room-title').innerText = title; 
             const hAv = document.getElementById('chat-header-avatar'); 
             if(rid === 'Общий') hAv.style.display = 'none'; else { hAv.src = avatar; hAv.style.display = 'block'; } 
-            document.getElementById('chat').innerHTML = ''; socket.emit('join', {room: rid}); 
+            document.getElementById('chat').innerHTML = ''; 
+            socket.emit('join', {room: rid}); 
         }
 
-        function viewCurrentPartner() { if(currentPartnerNick) viewProfile(currentPartnerNick); }
-        function handleTyping() { socket.emit('typing', {nick: myData.display, room: currentRoom}); clearTimeout(typingTimeout); typingTimeout = setTimeout(() => socket.emit('stop_typing', {nick: myData.display, room: currentRoom}), 2000); }
-        socket.on('user_typing', (d) => { if(d.room === currentRoom) document.getElementById('typing-indicator').innerText = d.nick + ' печатает...'; });
-        socket.on('user_stop_typing', (d) => { if(d.room === currentRoom) document.getElementById('typing-indicator').innerText = ''; });
-        socket.on('history', (msgs) => msgs.forEach(renderMessage));
-        socket.on('message', (d) => { if(d.room === currentRoom) renderMessage(d); });
+        // --- КОНТЕКСТНОЕ МЕНЮ И УДАЛЕНИЕ ---
+        function showMenu(event, rid) {
+            event.preventDefault();
+            event.stopPropagation();
+            currentChatId = rid;
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'block';
+            menu.style.left = event.pageX + 'px';
+            menu.style.top = event.pageY + 'px';
+        }
+
+        function hideContextMenu() { document.getElementById('context-menu').style.display = 'none'; }
+
+        function openDeleteModal() {
+            document.getElementById('delete-modal').style.display = 'flex';
+            hideContextMenu();
+        }
+
+        function closeDeleteModal() { document.getElementById('delete-modal').style.display = 'none'; }
+
+        function confirmDelete() {
+            const deleteAll = document.getElementById('delete-for-all').checked;
+            if (currentChatId) {
+                socket.emit('delete_chat', {
+                    chat_id: currentChatId,
+                    delete_for_all: deleteAll
+                });
+            }
+            closeDeleteModal();
+        }
+
+        socket.on('chat_deleted_globally', (data) => {
+            if(currentRoom === data.chat_id) document.getElementById('chat').innerHTML = '';
+            alert("Переписка удалена");
+            location.reload();
+        });
+
+        socket.on('chat_hidden_locally', () => location.reload());
+
+        // --- СООБЩЕНИЯ ---
+        function send() { 
+            const i = document.getElementById('msg'); 
+            if(i.value.trim()) { 
+                socket.emit('message', {n: myData.display, m: i.value.trim(), room: currentRoom}); 
+                i.value = ''; 
+            } 
+        }
 
         function renderMessage(d) { 
             const isOwn = d.n.toLowerCase() === myData.display.toLowerCase();
-            const container = document.createElement('div'); container.className = 'msg-container'; if(isOwn) container.style.flexDirection = 'row-reverse';
-            const avSrc = d.avatar && d.avatar.includes('http') ? d.avatar : 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + d.n;
-            let avHtml = (currentRoom === 'Общий') ? `<img src="${avSrc}" class="avatar" style="width:32px; height:32px; cursor:pointer;" onclick="viewProfile('${d.n}')">` : '';
+            const container = document.createElement('div'); 
+            container.className = 'msg-container'; 
+            if(isOwn) container.style.flexDirection = 'row-reverse';
+            const avSrc = d.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + d.n;
+            let avHtml = `<img src="${avSrc}" class="avatar" style="width:32px; height:32px; cursor:pointer;" onclick="viewProfile('${d.n}')">`;
             container.innerHTML = `${avHtml}<div class="msg ${isOwn ? 'own' : ''}"><b style="font-size:0.7rem; display:block; opacity:0.7; margin-bottom:4px; cursor:pointer;" onclick="viewProfile('${d.n}')">${d.n}</b>${d.m}</div>`; 
-            const c = document.getElementById('chat'); c.appendChild(container); c.scrollTop = c.scrollHeight; 
+            const chatDiv = document.getElementById('chat');
+            chatDiv.appendChild(container); 
+            chatDiv.scrollTop = chatDiv.scrollHeight; 
         }
 
+        socket.on('history', (msgs) => msgs.forEach(renderMessage));
+        socket.on('message', (d) => { if(d.room === currentRoom) renderMessage(d); });
+
+        // --- ПРОЧЕЕ ---
+        function handleTyping() { socket.emit('typing', {nick: myData.display, room: currentRoom}); clearTimeout(typingTimeout); typingTimeout = setTimeout(() => socket.emit('stop_typing', {nick: myData.display, room: currentRoom}), 2000); }
+        socket.on('user_typing', (d) => { if(d.room === currentRoom) document.getElementById('typing-indicator').innerText = d.nick + ' печатает...'; });
+        socket.on('user_stop_typing', (d) => { if(d.room === currentRoom) document.getElementById('typing-indicator').innerText = ''; });
+
+        function updateMyUI() { const av = myData.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + myData.display; document.getElementById('my-avatar-small').src = av; document.getElementById('my-nick-label').innerText = myData.display; }
+        function openProfile() { document.getElementById('p-display').value = myData.display; document.getElementById('p-avatar-url').value = myData.avatar || ''; document.getElementById('p-avatar-preview').src = myData.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + myData.display; document.getElementById('p-username').value = '@' + (myData.username || ''); document.getElementById('p-bio').value = myData.bio || ''; document.getElementById('profile-modal').style.display = 'flex'; }
+        function closeProfile() { document.getElementById('profile-modal').style.display = 'none'; }
+        function saveProfile() { socket.emit('update_profile', { my_nick: myData.display, new_display: document.getElementById('p-display').value.trim(), new_avatar: document.getElementById('p-avatar-url').value.trim(), new_bio: document.getElementById('p-bio').value.trim(), new_username: document.getElementById('p-username').value.trim() }); closeProfile(); }
         function viewProfile(nick) { socket.emit('get_user_info', {nick: nick}); }
         socket.on('user_info_res', (d) => {
-            document.getElementById('v-display').innerText = d.display; document.getElementById('v-avatar').src = d.avatar && d.avatar.includes('http') ? d.avatar : 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + d.display;
-            document.getElementById('v-username').innerText = '@' + d.username; document.getElementById('v-bio').innerText = d.bio;
+            document.getElementById('v-display').innerText = d.display; 
+            document.getElementById('v-avatar').src = d.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + d.display;
+            document.getElementById('v-username').innerText = '@' + (d.username || 'unknown'); 
+            document.getElementById('v-bio').innerText = d.bio || 'Нет описания';
             document.getElementById('v-status').innerHTML = d.online ? '<span style="color:var(--online)">● В сети</span>' : '<span style="color:var(--gray)">● Оффлайн</span>';
             document.getElementById('view-profile-modal').style.display = 'flex';
         });
 
-        function send() { const i = document.getElementById('msg'); if(i.value.trim()) { socket.emit('message', {n: myData.display, m: i.value.trim(), room: currentRoom}); i.value = ''; } }
-        function createPrivateChat() { const t = prompt("Ник собеседника:"); if(t && t.trim().toLowerCase() !== myData.display.toLowerCase()) switchRoom('direct_' + [myData.display.toLowerCase(), t.trim().toLowerCase()].sort().join('_'), t.trim(), '', t.trim().toLowerCase()); }
         function logout() { localStorage.clear(); location.reload(); }
+        function createPrivateChat() { const t = prompt("Ник собеседника:"); if(t && t.trim().toLowerCase() !== myData.display.toLowerCase()) switchRoom('direct_' + [myData.display.toLowerCase(), t.trim().toLowerCase()].sort().join('_'), t.trim(), '', t.trim().toLowerCase()); }
         document.getElementById('msg').onkeypress = e => { if(e.key==='Enter') send(); };
+        function viewCurrentPartner() { if(currentPartnerNick) viewProfile(currentPartnerNick); }
     </script>
-
-<div id="context-menu" class="context-menu">
-    <div onclick="openDeleteModal()" style="color: #ed4245;">
-        <i class="fas fa-trash"></i> Удалить чат
-    </div>
-</div>
-
-<div id="delete-modal" class="modal">
-    <div class="modal-content">
-        <h3>Удалить чат?</h3>
-        <p>Вы уверены, что хотите удалить этот чат?</p>
-        <label class="checkbox-container">
-            Удалить также для собеседника
-            <input type="checkbox" id="delete-for-all">
-            <span class="checkmark"></span>
-        </label>
-        <div class="modal-buttons">
-            <button onclick="closeDeleteModal()" class="btn-cancel">Отмена</button>
-            <button onclick="confirmDelete()" class="btn-confirm">Удалить</button>
-        </div>
-    </div>
-</div>
-
 </body>
 </html>
