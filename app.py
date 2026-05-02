@@ -60,5 +60,6 @@ def handle_delete_chat(data):
 # Вставь сюда свои стандартные обработчики auth и message, если они были удалены
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
+    # Хостинги сами назначают порт через переменную PORT
+    port = int(os.environ.get('PORT', 5000))
     socketio.run(app, host='0.0.0.0', port=port)
