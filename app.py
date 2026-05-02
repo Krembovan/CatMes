@@ -40,36 +40,62 @@ def handle_auth(data):
     
     if search_nick in users:
         if users[search_nick]['pass'] == pwd:
-            emit('auth_result', {'success': True, 'user': users[search_nick]})
+            user_data = users[search_nick]
+            # Гарантируем наличие полей
+            user_data.setdefault('friends', [])
+            user_data.setdefault('requests', [])
+            emit('auth_result', {'success': True, 'user': user_data})
         else:
             emit('auth_result', {'success': False, 'error': 'Неверный пароль'})
     else:
-        new_user = {'nick': nick, 'pass': pwd, 'avatar': '', 'bio': 'Пользователь Cyber Chat', 'rank': 'User'}
+        new_user = {
+            'nick': nick, 'pass': pwd, 'avatar': '', 
+            'bio': 'Пользователь Cyber Chat', 'friends': [], 'requests': []
+        }
         users[search_nick] = new_user
         save_db('users', users)
         emit('auth_result', {'success': True, 'user': new_user})
 
-@socketio.on('update_profile')
-def update_profile(data):
+@socketio.on('add_friend')
+def add_friend(data):
+    my_nick = data.get('my_nick').lower()
+    target_nick = data.get('target_nick').lower()
     users = load_db('users')
-    nick_key = data.get('nick', '').lower()
-    if nick_key in users:
-        users[nick_key]['avatar'] = data.get('avatar')
-        users[nick_key]['bio'] = data.get('bio')
+
+    if target_nick in users and target_nick != my_nick:
+        if my_nick not in users[target_nick]['requests'] and my_nick not in users[target_nick]['friends']:
+            users[target_nick]['requests'].append(data.get('my_nick'))
+            save_db('users', users)
+            emit('friend_update', {'msg': 'Запрос отправлен!'}, room=request.sid)
+    else:
+        emit('friend_update', {'msg': 'Пользователь не найден'}, room=request.sid)
+
+@socketio.on('accept_friend')
+def accept_friend(data):
+    my_nick = data.get('my_nick').lower()
+    target_nick = data.get('target_nick').lower()
+    users = load_db('users')
+
+    if target_nick in users:
+        # Убираем из заявок, добавляем в друзья обоим
+        if data.get('target_nick') in users[my_nick]['requests']:
+            users[my_nick]['requests'].remove(data.get('target_nick'))
+        
+        if data.get('target_nick') not in users[my_nick]['friends']:
+            users[my_nick]['friends'].append(data.get('target_nick'))
+        if data.get('my_nick') not in users[target_nick]['friends']:
+            users[target_nick]['friends'].append(data.get('my_nick'))
+        
         save_db('users', users)
-        emit('auth_result', {'success': True, 'user': users[nick_key]})
-
-@socketio.on('get_rooms')
-def get_rooms():
-    emit('room_list', load_db('registry'))
-
-@socketio.on('join')
-def on_join(data):
-    room = data.get('room')
-    if room:
-        join_room(room)
-        hist = [m for m in load_db('history') if m.get('room') == room]
-        emit('history', hist)
+        
+        # Создаем приватный чат в реестре
+        reg = load_db('registry')
+        chat_id = f"priv_{min(my_nick, target_nick)}_{max(my_nick, target_nick)}"
+        reg[chat_id] = {"name": f"🤝 {data.get('target_nick')}", "type": "private"}
+        save_db('registry', reg)
+        
+        emit('auth_result', {'success': True, 'user': users[my_nick]})
+        emit('room_list', reg, broadcast=True)
 
 @socketio.on('message')
 def handle_msg(data):
@@ -81,20 +107,17 @@ def handle_msg(data):
     save_db('history', h[-1000:])
     emit('message', data, room=room)
 
-@socketio.on('delete_chat')
-def handle_delete(data):
-    rid = data.get('chat_id')
-    delete_all = data.get('delete_for_all')
-    if delete_all:
-        msgs = [m for m in load_db('history') if m.get('room') != rid]
-        save_db('history', msgs)
-        reg = load_db('registry')
-        if rid in reg: reg.pop(rid)
-        save_db('registry', reg)
-        emit('chat_deleted_globally', {'room': rid}, broadcast=True)
-    else:
-        emit('chat_hidden_locally', {'room': rid})
+@socketio.on('join')
+def on_join(data):
+    room = data.get('room')
+    if room:
+        join_room(room)
+        hist = [m for m in load_db('history') if m.get('room') == room]
+        emit('history', hist)
+
+@socketio.on('get_rooms')
+def get_rooms():
+    emit('room_list', load_db('registry'))
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    socketio.run(app, host='0.0.0.0', port=port)
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
