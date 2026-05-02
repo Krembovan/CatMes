@@ -1,87 +1,51 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
     <title>SCAM CHAT</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        body { background: #0f111a; color: white; font-family: sans-serif; margin: 0; }
-        /* Модалка */
-        .modal-overlay { 
-            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); 
-            z-index: 1000; align-items: center; justify-content: center; 
-        }
-        .modal-card { 
-            background: #1e212b; padding: 30px; border-radius: 20px; 
-            width: 350px; text-align: center; 
-        }
-        .m-btn { padding: 12px 20px; border: none; border-radius: 10px; cursor: pointer; margin: 5px; font-weight: bold; }
+        /* Стили модалки из твоего скриншота */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 999; align-items: center; justify-content: center; }
+        .modal-card { background: #1e212b; padding: 30px; border-radius: 20px; width: 350px; text-align: center; color: white; }
+        .btn { padding: 12px 20px; border-radius: 10px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
         .btn-red { background: #ff4747; color: white; }
         .btn-gray { background: #3e4147; color: white; }
-        
-        /* Меню */
-        .context-menu {
-            display: none; position: fixed; background: #181922; border-radius: 10px;
-            padding: 5px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); z-index: 2000;
-        }
-        .menu-item { padding: 10px; cursor: pointer; border-radius: 5px; }
-        .menu-item:hover { background: #2a2d37; }
     </style>
 </head>
 <body onclick="hideAll()">
-
     <div id="del-modal" class="modal-overlay">
         <div class="modal-card" onclick="event.stopPropagation()">
-            <h3>Удалить чат?</h3>
-            <label><input type="checkbox" id="check-all"> Удалить для всех</label><br><br>
-            <button class="m-btn btn-gray" onclick="closeModal()">ОТМЕНА</button>
-            <button class="m-btn btn-red" onclick="confirmDelete()">УДАЛИТЬ</button>
+            <h2>Удалить чат?</h2>
+            <p>Вы уверены, что хотите удалить историю переписки?</p>
+            <label><input type="checkbox" id="del-all"> Удалить для собеседника</label><br><br>
+            <button class="btn btn-gray" onclick="toggleModal(false)">ОТМЕНА</button>
+            <button class="btn btn-red" onclick="confirmDelete()">УДАЛИТЬ</button>
         </div>
     </div>
 
-    <div id="ctx-menu" class="context-menu">
-        <div class="menu-item" onclick="toggleModal(true)">🗑️ Удалить историю</div>
-    </div>
-
     <script>
-        // ГЛАВНОЕ: Сначала сокет, потом всё остальное
-        const socket = io();
-        let targetChatId = null;
-        let myNick = localStorage.getItem('skam_nick') || 'User';
+        // ИНИЦИАЛИЗАЦИЯ ПЕРВОЙ СТРОКОЙ
+        const socket = io(); 
+        let currentTarget = null;
 
-        function showContextMenu(e, rid) {
-            e.preventDefault();
-            e.stopPropagation();
-            targetChatId = rid;
-            const menu = document.getElementById('ctx-menu');
-            menu.style.display = 'block';
-            menu.style.left = e.pageX + 'px';
-            menu.style.top = e.pageY + 'px';
-        }
-
-        function hideAll() {
-            document.getElementById('ctx-menu').style.display = 'none';
-        }
-
-        function toggleModal(show) {
+        function hideAll() { /* Логика скрытия меню */ }
+        
+        function toggleModal(show, rid) {
+            currentTarget = rid || currentTarget;
             document.getElementById('del-modal').style.display = show ? 'flex' : 'none';
-            hideAll();
         }
-
-        function closeModal() { toggleModal(false); }
 
         function confirmDelete() {
-            const isAll = document.getElementById('check-all').checked;
             socket.emit('delete_chat', {
-                chat_id: targetChatId,
-                delete_for_all: isAll,
-                my_nick: myNick
+                chat_id: currentTarget,
+                delete_for_all: document.getElementById('del-all').checked,
+                my_nick: localStorage.getItem('nick')
             });
             toggleModal(false);
         }
 
         socket.on('chat_deleted_globally', () => location.reload());
-        socket.on('chat_hidden_locally', () => location.reload());
     </script>
 </body>
 </html>
