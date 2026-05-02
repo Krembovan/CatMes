@@ -158,6 +158,36 @@ def on_join(data):
     history = [m for m in load_json(HISTORY_FILE, []) if m.get('room') == data['room']]
     emit('history', history)
 
+import json
+
+@socketio.on('delete_chat')
+def handle_delete_chat(data):
+    chat_id = data.get('chat_id')
+    delete_for_all = data.get('delete_for_all')
+    current_user = session.get('user')
+
+    # 1. Загружаем твой файл с сообщениями (проверь название файла!)
+    try:
+        with open('messages.json', 'r', encoding='utf-8') as f:
+            messages = json.load(f)
+    except FileNotFoundError:
+        return
+
+    if delete_for_all:
+        # Удаляем все сообщения, где room или chat_id совпадает
+        messages = [msg for msg in messages if msg.get('room') != chat_id]
+        
+        # Сохраняем обратно
+        with open('messages.json', 'w', encoding='utf-8') as f:
+            json.dump(messages, f, ensure_ascii=False, indent=4)
+            
+        # Рассылаем всем сигнал: "Удалить этот чат из интерфейса"
+        emit('chat_deleted_globally', {'chat_id': chat_id}, broadcast=True)
+    else:
+        # Логика "Удалить только у меня" сложнее (нужно помечать, кто удалил)
+        # Для начала можно просто сделать очистку экрана у пользователя
+        emit('chat_hidden_locally', {'chat_id': chat_id})
+
 if __name__ == '__main__':
     # Считываем порт, который даст Render (по умолчанию 10000 там)
     port = int(os.environ.get('PORT', 5000))

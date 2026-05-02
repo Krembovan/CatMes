@@ -7,6 +7,68 @@
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
+	/* Контекстное меню */
+.context-menu {
+    display: none;
+    position: absolute;
+    background: #2f3136;
+    border: 1px solid #4f545c;
+    border-radius: 4px;
+    z-index: 1000;
+    padding: 5px 0;
+    min-width: 150px;
+}
+
+.context-menu div {
+    padding: 8px 15px;
+    cursor: pointer;
+    color: white;
+}
+
+.context-menu div:hover {
+    background: #4752c4;
+}
+
+/* Модальное окно */
+.modal {
+    display: none; 
+    position: fixed; 
+    z-index: 2000; 
+    left: 0; top: 0; width: 100%; height: 100%; 
+    background: rgba(0,0,0,0.7); 
+    align-items: center; 
+    justify-content: center;
+}
+
+.modal-content {
+    background: #36393f;
+    padding: 20px;
+    border-radius: 8px;
+    width: 320px;
+    color: white;
+    text-align: center;
+}
+
+.modal-buttons {
+    margin-top: 20px;
+    display: flex;
+    justify-content: space-around;
+}
+
+.btn-confirm { background: #ed4245; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+.btn-cancel { background: #4f545c; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+
+/* Галочка */
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 15px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
         :root { --bg: #0f111a; --surface: #1a1d2e; --primary: #7289da; --text: #ffffff; --danger: #ff4747; --online: #43b581; --gray: #949ba4; }
         @keyframes gradientBG { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
         body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; }
@@ -94,6 +156,51 @@
     </div>
 
     <script>
+	// Слушаем сервер: если чат удален для всех
+socket.on('chat_deleted_globally', function(data) {
+    // Находим элемент чата по ID и удаляем его из DOM
+    const chatElement = document.getElementById('chat-' + data.chat_id);
+    if (chatElement) chatElement.remove();
+    alert("Чат был удален для всех участников");
+});
+
+// Если скрыто только для тебя
+socket.on('chat_hidden_locally', function(data) {
+    location.reload(); // Самый простой способ — просто обновить страницу
+});
+
+	// Показать меню при клике на три точки
+function showMenu(event, chatId) {
+    event.stopPropagation();
+    currentChatId = chatId; // Запоминаем, какой чат хотим удалить
+    const menu = document.getElementById('context-menu');
+    menu.style.display = 'block';
+    menu.style.left = event.pageX + 'px';
+    menu.style.top = event.pageY + 'px';
+}
+
+// Закрывать меню при клике в любое другое место
+document.addEventListener('click', () => {
+    document.getElementById('context-menu').style.display = 'none';
+});
+
+// Функции окна (которые ты уже начал писать)
+function openDeleteModal() {
+    document.getElementById('delete-modal').style.display = 'flex';
+}
+
+function closeDeleteModal() {
+    document.getElementById('delete-modal').style.display = 'none';
+}
+
+function confirmDelete() {
+    const deleteAll = document.getElementById('delete-for-all').checked;
+    socket.emit('delete_chat', {
+        chat_id: currentChatId,
+        delete_for_all: deleteAll
+    });
+    closeDeleteModal();
+}
         const socket = io();
         let currentRoom = 'Общий', myData = {}, typingTimeout, currentPartnerNick = null, selectedRoomForMenu = null;
 
@@ -181,5 +288,26 @@
         function logout() { localStorage.clear(); location.reload(); }
         document.getElementById('msg').onkeypress = e => { if(e.key==='Enter') send(); };
     </script>
+
+<div id="context-menu" class="context-menu">
+    <div onclick="openDeleteModal()"><i class="fas fa-trash"></i> Удалить чат</div>
+</div>
+
+<div id="delete-modal" class="modal">
+    <div class="modal-content">
+        <h3>Удалить чат?</h3>
+        <p>Вы уверены, что хотите удалить этот чат?</p>
+        <label class="checkbox-container">
+            Удалить также для собеседника
+            <input type="checkbox" id="delete-for-all">
+            <span class="checkmark"></span>
+        </label>
+        <div class="modal-buttons">
+            <button onclick="closeDeleteModal()" class="btn-cancel">Отмена</button>
+            <button onclick="confirmDelete()" class="btn-confirm">Удалить</button>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
