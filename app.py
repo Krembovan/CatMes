@@ -2,7 +2,7 @@ import eventlet
 eventlet.monkey_patch()
 
 import json, os, time
-from flask import Flask, render_template, request
+from flask import Flask, render_template
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
@@ -33,7 +33,7 @@ def index():
 
 @socketio.on('auth')
 def handle_auth(data):
-    nick = data.get('nick', '').strip() or "Guest"
+    nick = data.get('nick', '').strip() or "Гость"
     pwd = data.get('password', '')
     users = load_db('users')
     search_nick = nick.lower()
@@ -44,7 +44,7 @@ def handle_auth(data):
         else:
             emit('auth_result', {'success': False, 'error': 'Неверный пароль'})
     else:
-        new_user = {'nick': nick, 'pass': pwd, 'avatar': 'https://i.imgur.com/6VBx3io.png', 'bio': 'Cyber Traveler', 'rank': 'User'}
+        new_user = {'nick': nick, 'pass': pwd, 'avatar': '', 'bio': 'Пользователь Cyber Chat', 'rank': 'User'}
         users[search_nick] = new_user
         save_db('users', users)
         emit('auth_result', {'success': True, 'user': new_user})
@@ -84,9 +84,13 @@ def handle_msg(data):
 @socketio.on('delete_chat')
 def handle_delete(data):
     rid = data.get('chat_id')
-    if data.get('delete_for_all'):
+    delete_all = data.get('delete_for_all')
+    if delete_all:
         msgs = [m for m in load_db('history') if m.get('room') != rid]
         save_db('history', msgs)
+        reg = load_db('registry')
+        if rid in reg: reg.pop(rid)
+        save_db('registry', reg)
         emit('chat_deleted_globally', {'room': rid}, broadcast=True)
     else:
         emit('chat_hidden_locally', {'room': rid})
