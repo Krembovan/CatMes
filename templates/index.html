@@ -62,7 +62,9 @@
 
     <script>
         // Инициализация socket ПЕРВОЙ строкой скрипта
-        const socket = io();
+      const socket = io({
+    transports: ["websocket", "polling"]
+});
         let selectedRoom = null;
 
         function closeAllMenus() {
