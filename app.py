@@ -1,34 +1,35 @@
 import eventlet
-eventlet.monkey_patch()  # Это всегда самое первое
+eventlet.monkey_patch()  # Должно быть самым первым!
 
 import json, os, time
 from flask import Flask, render_template, request, send_from_directory
 from flask_socketio import SocketIO, emit, join_room
 
-# 1. Сначала создаем объект приложения
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_1337_prod'
 
-# 2. Теперь, когда 'app' существует, можно вешать на него маршруты
-@app.route('/favicon.ico')
-def favicon():
-    # Проверка на наличие папки static, чтобы не было ошибок
-    static_dir = os.path.join(app.root_path, 'static')
-    if not os.path.exists(static_dir):
-        os.makedirs(static_dir)
-    return send_from_directory(static_dir,
-                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
-
-# 3. Инициализируем сокеты
+# Настройка сокетов
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-# 4. Настройки путей к БД
+# Пути к файлам базы данных
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILES = {
     'history': os.path.join(BASE_DIR, 'history.json'),
     'users': os.path.join(BASE_DIR, 'users.json'),
     'registry': os.path.join(BASE_DIR, 'chats_registry.json')
 }
+
+# Маршрут для иконки (чтобы убрать ошибку 404)
+@app.route('/favicon.ico')
+def favicon():
+    # Если папки static нет, мы просто вернем пустой ответ, чтобы браузер отстал
+    return '', 204
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+# --- Далее идут твои функции базы данных и обработчики сокетов ---
 
 def load_db(key):
     path = DB_FILES[key]
