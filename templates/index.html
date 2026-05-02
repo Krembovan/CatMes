@@ -2,107 +2,115 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SCAM CHAT</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        :root { --bg: #0f111a; --modal: #1e212b; --red: #ff4747; --text: #ffffff; }
-        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; }
-
-        /* Красивая модалка из твоего референса */
+        :root { --bg: #0f111a; --surface: #1e212b; --primary: #ff4747; --text: #ffffff; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; overflow: hidden; }
+        
+        /* Модальное окно удаления */
         .modal-overlay { 
-            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); 
-            z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(4px);
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); 
+            z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(5px);
         }
         .modal-card { 
-            background: var(--modal); padding: 32px; border-radius: 24px; 
-            width: 360px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            background: var(--surface); padding: 35px; border-radius: 24px; 
+            width: 90%; max-width: 400px; text-align: center; border: 1px solid rgba(255,255,255,0.05);
         }
-        .modal-card h2 { margin: 0 0 12px; font-size: 22px; }
-        .modal-card p { color: #8e9297; font-size: 15px; margin-bottom: 24px; }
+        .modal-card h2 { margin: 0 0 15px; font-size: 24px; }
+        .modal-card p { color: #949ba4; margin-bottom: 25px; line-height: 1.5; }
         
-        .check-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 24px; cursor: pointer; }
-        .check-row input { width: 18px; height: 18px; accent-color: var(--red); }
+        .checkbox-container { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 30px; cursor: pointer; }
+        .checkbox-container input { width: 20px; height: 20px; accent-color: var(--primary); }
 
-        .btn-box { display: flex; gap: 12px; }
-        .m-btn { flex: 1; padding: 14px; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; }
-        .btn-cancel { background: #3e4147; color: white; }
-        .btn-del { background: var(--red); color: white; }
-        .m-btn:hover { transform: scale(0.98); opacity: 0.9; }
+        .btn-row { display: flex; gap: 15px; }
+        .btn { flex: 1; padding: 14px; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; font-size: 15px; }
+        .btn-gray { background: #3e4147; color: white; }
+        .btn-red { background: var(--primary); color: white; }
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
 
         /* Контекстное меню */
-        #custom-menu { display: none; position: fixed; background: #181922; border-radius: 12px; padding: 8px; z-index: 10000; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        .menu-opt { padding: 10px 14px; border-radius: 8px; cursor: pointer; color: white; font-size: 14px; }
-        .menu-opt:hover { background: rgba(255,255,255,0.05); }
+        #ctx-menu { 
+            display: none; position: fixed; background: #181922; 
+            border-radius: 12px; padding: 8px; z-index: 10000; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .ctx-item { padding: 12px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; color: #ff5c5c; transition: 0.2s; }
+        .ctx-item:hover { background: rgba(255,92,92,0.1); }
     </style>
 </head>
-<body onclick="hideAll()">
+<body onclick="closeAllMenus()">
 
-    <div id="del-modal" class="modal-overlay">
+    <div id="delete-modal" class="modal-overlay">
         <div class="modal-card" onclick="event.stopPropagation()">
             <h2>Удалить чат?</h2>
-            <p>Вы уверены, что хотите удалить историю переписки?</p>
-            <label class="check-row">
-                <input type="checkbox" id="del-all-check">
+            <p>Вы уверены? История переписки исчезнет навсегда.</p>
+            <label class="checkbox-container">
+                <input type="checkbox" id="delete-for-all-cb">
                 <span>Удалить для собеседника</span>
             </label>
-            <div class="btn-box">
-                <button class="m-btn btn-cancel" onclick="closeDelModal()">ОТМЕНА</button>
-                <button class="m-btn btn-del" onclick="execDelete()">УДАЛИТЬ</button>
+            <div class="btn-row">
+                <button class="btn btn-gray" onclick="closeModal()">ОТМЕНА</button>
+                <button class="btn btn-red" onclick="confirmDelete()">УДАЛИТЬ</button>
             </div>
         </div>
     </div>
 
-    <div id="custom-menu">
-        <div class="menu-opt" onclick="openDelModal()">🗑️ Удалить историю</div>
+    <div id="ctx-menu">
+        <div class="ctx-item" onclick="openModal()">🗑️ Удалить чат</div>
     </div>
 
     <script>
-        // ГЛАВНОЕ: Сокет создается СРАЗУ
+        // Инициализация socket ПЕРВОЙ строкой скрипта
         const socket = io();
-        let targetChat = null;
+        let selectedRoom = null;
 
-        function hideAll() {
-            document.getElementById('custom-menu').style.display = 'none';
+        function closeAllMenus() {
+            document.getElementById('ctx-menu').style.display = 'none';
         }
 
-        function showMenu(e, rid) {
+        // Вызывать при правом клике на чат в списке
+        function onRoomContextMenu(e, roomId) {
             e.preventDefault();
             e.stopPropagation();
-            targetChat = rid;
-            const menu = document.getElementById('custom-menu');
+            selectedRoom = roomId;
+            const menu = document.getElementById('ctx-menu');
             menu.style.display = 'block';
             menu.style.left = e.pageX + 'px';
             menu.style.top = e.pageY + 'px';
         }
 
-        function openDelModal() {
-            document.getElementById('del-modal').style.display = 'flex';
-            hideAll();
+        function openModal() {
+            document.getElementById('delete-modal').style.display = 'flex';
+            closeAllMenus();
         }
 
-        function closeDelModal() {
-            document.getElementById('del-modal').style.display = 'none';
+        function closeModal() {
+            document.getElementById('delete-modal').style.display = 'none';
         }
 
-        function execDelete() {
-            const forAll = document.getElementById('del-all-check').checked;
+        function confirmDelete() {
+            const forAll = document.getElementById('delete-for-all-cb').checked;
             socket.emit('delete_chat', {
-                chat_id: targetChat,
-                delete_for_all: forAll,
-                my_nick: localStorage.getItem('skam_nick')
+                chat_id: selectedRoom,
+                delete_for_all: forAll
             });
-            closeDelModal();
+            closeModal();
         }
 
-        // Слушатели (теперь они не упадут из-за socket is not defined)
+        // Слушаем глобальное удаление
         socket.on('chat_deleted_globally', (data) => {
-            alert("Чат удален для всех участников");
-            location.reload();
+            alert("Чат был удален");
+            location.reload(); // Перезагружаем, чтобы обновить список комнат
         });
 
+        // Слушаем локальное скрытие
         socket.on('chat_hidden_locally', () => {
             location.reload();
         });
+
+        // Заглушка для теста: если кликнуть правой кнопкой по фону, откроется меню для "Общего" чата
+        document.body.oncontextmenu = (e) => onRoomContextMenu(e, 'Общий');
     </script>
 </body>
 </html>
