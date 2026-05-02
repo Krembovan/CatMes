@@ -5,134 +5,83 @@
     <title>SCAM CHAT</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        :root {
-            --bg-dark: #12141c;
-            --modal-bg: #1e212b;
-            --accent-red: #ff4747;
-            --text-main: #ffffff;
-            --text-dim: #8e9297;
-            --btn-gray: #3e4147;
+        body { background: #0f111a; color: white; font-family: sans-serif; margin: 0; }
+        /* Модалка */
+        .modal-overlay { 
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); 
+            z-index: 1000; align-items: center; justify-content: center; 
         }
-
-        /* Красивое модальное окно */
-        .modal-overlay {
-            display: none; position: fixed; inset: 0;
-            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(5px);
-            z-index: 1000; align-items: center; justify-content: center;
+        .modal-card { 
+            background: #1e212b; padding: 30px; border-radius: 20px; 
+            width: 350px; text-align: center; 
         }
-
-        .modal-card {
-            background: var(--modal-bg); width: 400px; padding: 30px;
-            border-radius: 24px; text-align: center; color: white;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        .m-btn { padding: 12px 20px; border: none; border-radius: 10px; cursor: pointer; margin: 5px; font-weight: bold; }
+        .btn-red { background: #ff4747; color: white; }
+        .btn-gray { background: #3e4147; color: white; }
+        
+        /* Меню */
+        .context-menu {
+            display: none; position: fixed; background: #181922; border-radius: 10px;
+            padding: 5px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); z-index: 2000;
         }
-
-        .modal-card h2 { margin: 0 0 20px; font-size: 22px; font-weight: 600; }
-        .modal-card p { color: var(--text-dim); font-size: 15px; margin-bottom: 30px; line-height: 1.4; }
-
-        .checkbox-row {
-            display: flex; align-items: center; justify-content: center;
-            gap: 15px; margin-bottom: 30px; cursor: pointer;
-        }
-
-        .checkbox-row input { width: 18px; height: 18px; accent-color: var(--accent-red); }
-        .checkbox-row span { font-size: 14px; color: var(--text-main); }
-
-        .modal-actions { display: flex; gap: 15px; }
-        .m-btn {
-            flex: 1; padding: 14px; border: none; border-radius: 14px;
-            font-weight: 700; cursor: pointer; transition: 0.2s; font-size: 14px;
-            text-transform: uppercase;
-        }
-        .btn-cancel { background: var(--btn-gray); color: white; }
-        .btn-delete { background: var(--accent-red); color: white; }
-        .m-btn:hover { opacity: 0.9; transform: scale(0.98); }
-
-        /* Контекстное меню */
-        #custom-menu {
-            display: none; position: fixed; background: #181922;
-            border-radius: 12px; padding: 8px; min-width: 180px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.4); z-index: 2000;
-        }
-        .menu-opt {
-            padding: 10px 14px; border-radius: 8px; cursor: pointer;
-            display: flex; align-items: center; gap: 10px; color: white; font-size: 14px;
-        }
-        .menu-opt:hover { background: rgba(255,255,255,0.05); }
-        .menu-opt.red { color: #ff5c5c; }
+        .menu-item { padding: 10px; cursor: pointer; border-radius: 5px; }
+        .menu-item:hover { background: #2a2d37; }
     </style>
 </head>
-<body onclick="closeAllMenus()">
+<body onclick="hideAll()">
 
-    <div id="del-modal" class="modal-overlay" onclick="event.stopPropagation()">
-        <div class="modal-card">
-            <h2>Удалить чат?</h2>
-            <p>Вы уверены, что хотите удалить историю переписки?</p>
-            
-            <label class="checkbox-row">
-                <input type="checkbox" id="check-all">
-                <span>Удалить для собеседника</span>
-            </label>
-
-            <div class="modal-actions">
-                <button class="m-btn btn-cancel" onclick="toggleModal(false)">Отмена</button>
-                <button class="m-btn btn-delete" onclick="confirmDelete()">Удалить</button>
-            </div>
+    <div id="del-modal" class="modal-overlay">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <h3>Удалить чат?</h3>
+            <label><input type="checkbox" id="check-all"> Удалить для всех</label><br><br>
+            <button class="m-btn btn-gray" onclick="closeModal()">ОТМЕНА</button>
+            <button class="m-btn btn-red" onclick="confirmDelete()">УДАЛИТЬ</button>
         </div>
     </div>
 
-    <div id="custom-menu">
-        <div class="menu-opt" onclick="hideChatReq()">🙈 Скрыть чат</div>
-        <div class="menu-opt red" onclick="toggleModal(true)">🗑️ Удалить историю</div>
+    <div id="ctx-menu" class="context-menu">
+        <div class="menu-item" onclick="toggleModal(true)">🗑️ Удалить историю</div>
     </div>
 
     <script>
-        // ИНИЦИАЛИЗАЦИЯ (сразу!)
+        // ГЛАВНОЕ: Сначала сокет, потом всё остальное
         const socket = io();
-        let currentTargetChat = null;
-        let myData = { display: localStorage.getItem('skam_nick') || 'User' };
+        let targetChatId = null;
+        let myNick = localStorage.getItem('skam_nick') || 'User';
 
-        // Меню
-        function showMenu(e, rid) {
+        function showContextMenu(e, rid) {
             e.preventDefault();
             e.stopPropagation();
-            currentTargetChat = rid;
-            const menu = document.getElementById('custom-menu');
+            targetChatId = rid;
+            const menu = document.getElementById('ctx-menu');
             menu.style.display = 'block';
             menu.style.left = e.pageX + 'px';
             menu.style.top = e.pageY + 'px';
         }
 
-        function closeAllMenus() {
-            document.getElementById('custom-menu').style.display = 'none';
+        function hideAll() {
+            document.getElementById('ctx-menu').style.display = 'none';
         }
 
-        // Модалка
         function toggleModal(show) {
             document.getElementById('del-modal').style.display = show ? 'flex' : 'none';
-            closeAllMenus();
+            hideAll();
         }
 
-        // Удаление
+        function closeModal() { toggleModal(false); }
+
         function confirmDelete() {
             const isAll = document.getElementById('check-all').checked;
             socket.emit('delete_chat', {
-                chat_id: currentTargetChat,
+                chat_id: targetChatId,
                 delete_for_all: isAll,
-                my_nick: myData.display
+                my_nick: myNick
             });
             toggleModal(false);
         }
 
-        // Слушатели
-        socket.on('chat_deleted_globally', (data) => {
-            alert("Чат был удален");
-            location.reload(); 
-        });
-
-        socket.on('chat_hidden_locally', () => {
-            location.reload();
-        });
+        socket.on('chat_deleted_globally', () => location.reload());
+        socket.on('chat_hidden_locally', () => location.reload());
     </script>
 </body>
 </html>
