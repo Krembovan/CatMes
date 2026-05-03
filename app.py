@@ -9,7 +9,6 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-# Фикс для Render — используем /tmp/ если /opt/ недоступен
 BASE_DIR = os.environ.get('RENDER_DISK_PATH', os.path.dirname(os.path.abspath(__file__)))
 DB_FILES = {
     'history': os.path.join(BASE_DIR, 'history.json'),
@@ -40,7 +39,6 @@ def save_db(key, data):
         print(f"Error saving {key}: {e}", flush=True)
 
 def notify_user(username, event, data):
-    """Отправить событие пользователю если он онлайн"""
     sid = user_sessions.get(username)
     if sid:
         socketio.emit(event, data, room=sid)
@@ -49,7 +47,6 @@ def notify_user(username, event, data):
 def index():
     return render_template('index.html')
 
-# ============== АВТОРИЗАЦИЯ ==============
 @socketio.on('auth')
 def handle_auth(data):
     action = data.get('action', 'login')
@@ -98,7 +95,6 @@ def handle_auth(data):
         user_sessions[un] = request.sid
         emit('auth_result', {'success': True, 'user': user_data})
 
-# ============== ПРОФИЛЬ ==============
 @socketio.on('update_profile')
 def handle_profile_update(data):
     un = data.get('username', '').lower()
@@ -112,7 +108,6 @@ def handle_profile_update(data):
     save_db('users', users)
     emit('profile_updated', {'user': users[un]})
 
-# ============== ДРУЗЬЯ ==============
 @socketio.on('send_friend_request')
 def handle_friend_request(data):
     my_un = data.get('my_username', '').strip().lower()
@@ -252,14 +247,12 @@ def handle_remove_friend(data):
         if my_un in users[target_un].get('friends', []):
             users[target_un]['friends'].remove(my_un)
     
-    # Удаляем приватный чат между ними
     reg = load_db('registry')
     a, b = sorted([my_un, target_un])
     chat_id = f"priv_{a}_{b}"
     if chat_id in reg:
         del reg[chat_id]
         save_db('registry', reg)
-        # Удаляем историю чата
         hist = load_db('history')
         hist = [m for m in hist if m.get('room') != chat_id]
         save_db('history', hist)
@@ -269,7 +262,6 @@ def handle_remove_friend(data):
     emit('room_list', load_db('registry'), broadcast=True)
     notify_user(target_un, 'friend_removed_notify', {'user': users[target_un], 'by': my_un})
 
-# ============== УДАЛЕНИЕ ЧАТОВ ==============
 @socketio.on('delete_chat')
 def handle_delete_chat(data):
     chat_id = data.get('chat_id', '')
@@ -294,7 +286,6 @@ def handle_delete_chat_local(data):
     save_db('history', hist)
     emit('chat_deleted', {'success': True, 'chat_id': chat_id})
 
-# ============== СООБЩЕНИЯ ==============
 @socketio.on('message')
 def handle_msg(data):
     room = data.get('room', 'Общий')
@@ -323,7 +314,6 @@ def get_rooms():
         save_db('registry', reg)
     emit('room_list', reg)
 
-# ============== ОТКЛЮЧЕНИЕ ==============
 @socketio.on('disconnect')
 def handle_disconnect():
     for un, sid in list(user_sessions.items()):
