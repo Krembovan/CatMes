@@ -1,8 +1,12 @@
-# app.py — Полный код с фиксами
+# ⚠️ САМАЯ ПЕРВАЯ СТРОКА В ФАЙЛЕ
 import eventlet
 eventlet.monkey_patch()
 
-import json, os, time
+# Только после этого все остальные импорты
+import json
+import os
+import time
+import sys
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
 
@@ -10,7 +14,24 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'skam_secret_2024')
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
+# Принудительный вывод в логи
+print("=" * 60, flush=True)
+print("🚀 SKAM SERVER STARTING...", flush=True)
+print(f"📁 Current directory: {os.getcwd()}", flush=True)
+print(f"📁 Files in directory: {os.listdir('.')}", flush=True)
+print("=" * 60, flush=True)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
+INDEX_PATH = os.path.join(TEMPLATE_DIR, 'index.html')
+
+# Проверяем и создаём папку templates если её нет
+if not os.path.exists(TEMPLATE_DIR):
+    os.makedirs(TEMPLATE_DIR)
+    print(f"📁 Created templates directory: {TEMPLATE_DIR}", flush=True)
+
+print(f"📄 index.html exists: {os.path.exists(INDEX_PATH)}", flush=True)
+
 DB_FILES = {
     'history': os.path.join(BASE_DIR, 'history.json'),
     'users': os.path.join(BASE_DIR, 'users.json'),
@@ -35,6 +56,21 @@ def save_db(key, data):
 
 @app.route('/')
 def index():
+    # Экстренная проверка
+    if not os.path.exists(INDEX_PATH):
+        # Пробуем найти index.html где угодно
+        for root, dirs, files in os.walk(BASE_DIR):
+            if 'index.html' in files:
+                found_path = os.path.join(root, 'index.html')
+                error_msg = f"❌ index.html найден в {found_path}, но не в {INDEX_PATH}. Переместите файл в папку templates/"
+                print(error_msg, flush=True)
+                return error_msg, 500
+        
+        error_msg = f"❌ index.html НЕ НАЙДЕН! Проверьте что файл загружен в папку templates/"
+        print(error_msg, flush=True)
+        return error_msg, 500
+    
+    print("✅ Отдаём index.html", flush=True)
     return render_template('index.html')
 
 @socketio.on('auth')
@@ -45,12 +81,13 @@ def handle_auth(data):
     pwd = data.get('password', '')
     pwd2 = data.get('password2', '')
     
-    # Валидация
+    print(f"🔐 Auth attempt: {action} for {un}", flush=True)
+    
     if not un or len(un) < 3 or len(un) > 20:
-        emit('auth_result', {'success': False, 'error': 'Username от 3 до 20 символов'})
+        emit('auth_result', {'success': False, 'error': 'Логин: 3-20 символов'})
         return
     if not pwd or len(pwd) < 4:
-        emit('auth_result', {'success': False, 'error': 'Пароль минимум 4 символа'})
+        emit('auth_result', {'success': False, 'error': 'Пароль: минимум 4 символа'})
         return
     
     users = load_db('users')
@@ -63,20 +100,15 @@ def handle_auth(data):
             emit('auth_result', {'success': False, 'error': 'Пользователь уже существует'})
             return
         
-        new_user = {
-            'username': un,
-            'display_name': dn or un,
-            'pass': pwd,
+        users[un] = {
+            'username': un, 'display_name': dn or un, 'pass': pwd,
             'avatar': f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
-            'bio': 'Новый пользователь SKAM',
-            'friends': [],
-            'requests': []
+            'bio': 'Пользователь SKAM', 'friends': [], 'requests': []
         }
-        users[un] = new_user
         save_db('users', users)
-        emit('auth_result', {'success': True, 'user': new_user})
-    
-    else:  # login
+        print(f"✅ New user registered: {un}", flush=True)
+        emit('auth_result', {'success': True, 'user': users[un]})
+    else:
         if un not in users:
             emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
             return
@@ -87,6 +119,7 @@ def handle_auth(data):
         user_data = users[un]
         user_data.setdefault('friends', [])
         user_data.setdefault('requests', [])
+        print(f"✅ User logged in: {un}", flush=True)
         emit('auth_result', {'success': True, 'user': user_data})
 
 @socketio.on('update_profile')
@@ -97,7 +130,6 @@ def handle_profile_update(data):
     if un not in users:
         return
     
-    # Обновляем только разрешённые поля
     if 'display_name' in data and data['display_name'].strip():
         users[un]['display_name'] = data['display_name'].strip()
     if 'bio' in data:
@@ -106,6 +138,7 @@ def handle_profile_update(data):
         users[un]['avatar'] = data['avatar'].strip()
     
     save_db('users', users)
+    print(f"✅ Profile updated: {un}", flush=True)
     emit('profile_updated', {'user': users[un]})
 
 @socketio.on('send_friend_request')
@@ -115,13 +148,11 @@ def handle_friend_request(data):
     users = load_db('users')
     
     if not target_un:
-        emit('friend_msg', {'text': 'Введите username', 'type': 'error'}, room=request.sid)
+        emit('friend_msg', {'text': 'Введите имя пользователя', 'type': 'error'}, room=request.sid)
         return
-    
     if target_un not in users:
         emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'}, room=request.sid)
         return
-    
     if target_un == my_un:
         emit('friend_msg', {'text': 'Нельзя добавить себя', 'type': 'error'}, room=request.sid)
         return
@@ -130,13 +161,13 @@ def handle_friend_request(data):
     if my_un in user.get('friends', []):
         emit('friend_msg', {'text': 'Вы уже друзья', 'type': 'info'}, room=request.sid)
         return
-    
     if my_un in user.get('requests', []):
         emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'}, room=request.sid)
         return
     
     user.setdefault('requests', []).append(my_un)
     save_db('users', users)
+    print(f"✅ Friend request: {my_un} -> {target_un}", flush=True)
     emit('friend_msg', {'text': f'Запрос отправлен @{target_un}', 'type': 'success'}, room=request.sid)
 
 @socketio.on('accept_friend')
@@ -145,7 +176,7 @@ def handle_accept(data):
     target_un = data.get('target_username', '').lower()
     users = load_db('users')
     
-    if not my_un in users:
+    if my_un not in users:
         return
     
     user = users[my_un]
@@ -158,14 +189,14 @@ def handle_accept(data):
     if target_un in users:
         users[target_un].setdefault('friends', []).append(my_un)
     
-    # Создаём приватный чат
     reg = load_db('registry')
     chat_id = f"priv_{min(my_un, target_un)}_{max(my_un, target_un)}"
     if chat_id not in reg:
-        reg[chat_id] = {"name": f"Чат с @{target_un}", "type": "private"}
+        reg[chat_id] = {"name": f"Чат @{target_un}", "type": "private"}
         save_db('registry', reg)
     
     save_db('users', users)
+    print(f"✅ Friends accepted: {my_un} <-> {target_un}", flush=True)
     emit('auth_result', {'success': True, 'user': users[my_un]})
     emit('room_list', reg, broadcast=True)
 
@@ -198,10 +229,12 @@ def on_join(data):
 @socketio.on('get_rooms')
 def get_rooms():
     reg = load_db('registry')
-    # Добавляем общую комнату всегда
     if 'Общий' not in reg:
         reg['Общий'] = {"name": "Общий канал", "type": "public"}
+        save_db('registry', reg)
     emit('room_list', reg)
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+    port = int(os.environ.get('PORT', 10000))
+    print(f"🌐 Starting server on port {port}", flush=True)
+    socketio.run(app, host='0.0.0.0', port=port)
