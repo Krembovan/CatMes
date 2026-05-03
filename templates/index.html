@@ -271,11 +271,24 @@
         .toast.success { border-left: 4px solid var(--success); }
         .toast.error { border-left: 4px solid var(--danger); }
         .toast.info { border-left: 4px solid var(--accent); }
+
+        .friend-remove-btn {
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 1rem;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: 0.2s;
+            line-height: 1;
+        }
+        .friend-remove-btn:hover {
+            color: var(--danger);
+            background: rgba(239,68,68,0.1);
+        }
     </style>
 </head>
 <body>
 
-    <!-- АВТОРИЗАЦИЯ -->
     <div id="authOverlay" class="modal-overlay active">
         <div class="modal">
             <h2>⚡ <span style="background:linear-gradient(135deg,#7c5cfc,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">SKAM</span></h2>
@@ -300,7 +313,6 @@
         </div>
     </div>
 
-    <!-- ПРОФИЛЬ -->
     <div id="profileOverlay" class="modal-overlay">
         <div class="modal">
             <h2>👤 Профиль</h2>
@@ -315,7 +327,6 @@
         </div>
     </div>
 
-    <!-- ДОБАВЛЕНИЕ ДРУГА -->
     <div id="friendOverlay" class="modal-overlay">
         <div class="modal">
             <h2>🔍 Найти друга</h2>
@@ -326,7 +337,6 @@
         </div>
     </div>
 
-    <!-- УВЕДОМЛЕНИЯ -->
     <div class="notif-overlay" id="notifPanel">
         <div class="notif-header">
             <span>🔔 Уведомления</span>
@@ -337,7 +347,6 @@
 
     <div id="toast" class="toast"></div>
 
-    <!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
     <div class="app-container" id="mainApp" style="display:none;">
         <div class="sidebar">
             <div class="sidebar-header">
@@ -346,7 +355,7 @@
                     <div class="icon-btn" onclick="toggleNotifPanel()" title="Уведомления">
                         🔔<span class="badge-count" id="notifBadge"></span>
                     </div>
-                   <div class="icon-btn" onclick="openFriendModal()" title="Добавить друга">+</div>
+                    <div class="icon-btn" onclick="openFriendModal()" title="Добавить друга">+</div>
                     <div class="icon-btn" onclick="openModal('profileOverlay');loadProfile();" title="Профиль">👤</div>
                 </div>
             </div>
@@ -417,12 +426,11 @@
             document.getElementById('regError').textContent = '';
         }
 
-// Авто-вход при загрузке (проверяем localStorage)
-var savedUser = localStorage.getItem('skam_user');
-var savedPass = localStorage.getItem('skam_pass');
-if (savedUser && savedPass) {
-    socket.emit('auth', { action: 'login', username: savedUser, password: savedPass });
-}
+        var savedUser = localStorage.getItem('skam_user');
+        var savedPass = localStorage.getItem('skam_pass');
+        if (savedUser && savedPass) {
+            socket.emit('auth', { action: 'login', username: savedUser, password: savedPass });
+        }
 
         function handleLogin() {
             var un = document.getElementById('loginUser').value.trim();
@@ -447,10 +455,10 @@ if (savedUser && savedPass) {
         }
 
         socket.on('auth_result', function(data) {
-           if (data.success) {
-    myData = data.user;
-    localStorage.setItem('skam_user', myData.username);
-    localStorage.setItem('skam_pass', document.getElementById('loginPass').value || savedPass || '');
+            if (data.success) {
+                myData = data.user;
+                localStorage.setItem('skam_user', myData.username);
+                localStorage.setItem('skam_pass', document.getElementById('loginPass').value || savedPass || '');
                 notifications = myData.notifications || [];
                 document.getElementById('authOverlay').classList.remove('active');
                 document.getElementById('mainApp').style.display = 'flex';
@@ -500,17 +508,15 @@ if (savedUser && savedPass) {
         });
 
         function logout() {
-    localStorage.removeItem('skam_user');
-    localStorage.removeItem('skam_pass');
-    myData = null;
-    document.getElementById('mainApp').style.display = 'none';
-    document.getElementById('authOverlay').classList.add('active');
-    document.getElementById('messages').innerHTML = '<div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Выберите чат</div></div>';
-    closeModal('profileOverlay');
-}
-        
+            localStorage.removeItem('skam_user');
+            localStorage.removeItem('skam_pass');
+            myData = null;
+            document.getElementById('mainApp').style.display = 'none';
+            document.getElementById('authOverlay').classList.add('active');
+            document.getElementById('messages').innerHTML = '<div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Выберите чат</div></div>';
+            closeModal('profileOverlay');
+        }
 
-        // ========== УВЕДОМЛЕНИЯ ==========
         function toggleNotifPanel() {
             var panel = document.getElementById('notifPanel');
             panel.classList.toggle('open');
@@ -559,37 +565,37 @@ if (savedUser && savedPass) {
         });
 
         // ========== ДРУЗЬЯ ==========
-       function updateFriendList() {
-    if (!myData) return;
-    updateBadge();
-    var list = document.getElementById('friendList');
-    var html = '';
-    
-    // Запросы
-    (myData.requests || []).forEach(function(un){
-        html += '<div class="friend-item" style="border:1px dashed var(--primary);">' +
-            '<div class="chat-avatar">👤</div>' +
-            '<span style="flex:1;">@' + escapeHtml(un) + '</span>' +
-            '<button class="badge-accept" onclick="event.stopPropagation();acceptFriend(\'' + escapeHtml(un) + '\')">✓ Принять</button>' +
-        '</div>';
-    });
-    
-    // Друзья
-    (myData.friends || []).forEach(function(un){
-        html += '<div class="friend-item" onclick="startPrivate(\'' + escapeHtml(un) + '\')">' +
-            '<div class="chat-avatar">🔵</div><span>@' + escapeHtml(un) + '</span>' +
-        '</div>';
-    });
-    
-    if (!html) html = '<div style="padding:10px;color:var(--text-secondary);font-size:0.8rem;">Нет друзей</div>';
-    list.innerHTML = html;
-}
+        function updateFriendList() {
+            if (!myData) return;
+            updateBadge();
+            var list = document.getElementById('friendList');
+            var html = '';
+            
+            (myData.requests || []).forEach(function(un){
+                html += '<div class="friend-item" style="border:1px dashed var(--primary);">' +
+                    '<div class="chat-avatar">👤</div>' +
+                    '<span style="flex:1;">@' + escapeHtml(un) + '</span>' +
+                    '<button class="badge-accept" onclick="event.stopPropagation();acceptFriend(\'' + escapeHtml(un) + '\')">✓ Принять</button>' +
+                '</div>';
+            });
+            
+            (myData.friends || []).forEach(function(un){
+                html += '<div class="friend-item" onclick="startPrivate(\'' + escapeHtml(un) + '\')">' +
+                    '<div class="chat-avatar">🔵</div>' +
+                    '<span style="flex:1;">@' + escapeHtml(un) + '</span>' +
+                    '<span class="friend-remove-btn" onclick="event.stopPropagation();removeFriend(\'' + escapeHtml(un) + '\')" title="Удалить из друзей">✕</span>' +
+                '</div>';
+            });
+            
+            if (!html) html = '<div style="padding:10px;color:var(--text-secondary);font-size:0.8rem;">Нет друзей</div>';
+            list.innerHTML = html;
+        }
 
-function openFriendModal() {
-    document.getElementById('searchUser').value = '@';
-    document.getElementById('friendError').textContent = '';
-    openModal('friendOverlay');
-}
+        function openFriendModal() {
+            document.getElementById('searchUser').value = '@';
+            document.getElementById('friendError').textContent = '';
+            openModal('friendOverlay');
+        }
 
         function sendFriendReq() {
             var target = document.getElementById('searchUser').value.trim();
@@ -602,6 +608,11 @@ function openFriendModal() {
             socket.emit('accept_friend', { my_username: myData.username, target_username: un });
         }
 
+        function removeFriend(un) {
+            if (!confirm('Удалить @' + un + ' из друзей?')) return;
+            socket.emit('remove_friend', { my_username: myData.username, target_username: un });
+        }
+
         function declineFriend(un) {
             socket.emit('decline_friend', { my_username: myData.username, target_username: un });
         }
@@ -610,25 +621,32 @@ function openFriendModal() {
             showToast(data.text, data.type || 'info');
         });
 
-// Мгновенное обновление при входящем запросе
-socket.on('incoming_friend_request', function(data) {
-    if (myData && data.user && data.user.username === myData.username) {
-        myData = data.user;
-        updateFriendList();
-        updateBadge();
-        showToast('@' + data.from + ' хочет добавить вас в друзья', 'info');
-    }
-});
+        socket.on('incoming_friend_request', function(data) {
+            if (myData && data.user && data.user.username === myData.username) {
+                myData = data.user;
+                updateFriendList();
+                updateBadge();
+                showToast('@' + data.from + ' хочет добавить вас в друзья', 'info');
+            }
+        });
 
-// Мгновенное обновление когда твой запрос приняли
-socket.on('friend_accepted_notify', function(data) {
-    if (myData && data.user && data.user.username === myData.username) {
-        myData = data.user;
-        updateFriendList();
-        socket.emit('get_rooms');
-        showToast('@' + data.by + ' принял ваш запрос', 'success');
-    }
-});
+        socket.on('friend_accepted_notify', function(data) {
+            if (myData && data.user && data.user.username === myData.username) {
+                myData = data.user;
+                updateFriendList();
+                socket.emit('get_rooms');
+                showToast('@' + data.by + ' принял ваш запрос', 'success');
+            }
+        });
+
+        socket.on('friend_removed_notify', function(data) {
+            if (myData && data.user && data.user.username === myData.username) {
+                myData = data.user;
+                updateFriendList();
+                socket.emit('get_rooms');
+                showToast('@' + data.by + ' удалил вас из друзей', 'info');
+            }
+        });
 
         // ========== КОМНАТЫ ==========
         socket.on('room_list', function(rooms) {
@@ -680,7 +698,6 @@ socket.on('friend_accepted_notify', function(data) {
             switchRoom('priv_' + ids[0] + '_' + ids[1]);
         }
 
-        // ========== МЕНЮ ЧАТА ==========
         function toggleChatMenu(event, chatId, friendUn) {
             event.stopPropagation();
             closeAllMenus();
@@ -730,7 +747,6 @@ socket.on('friend_accepted_notify', function(data) {
             }
         });
 
-        // ========== СООБЩЕНИЯ ==========
         function sendMsg() {
             var input = document.getElementById('msgInput');
             var text = input.value.trim();
@@ -771,7 +787,6 @@ socket.on('friend_accepted_notify', function(data) {
             }
         });
 
-        // Enter в полях
         document.getElementById('loginPass').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') handleLogin();
         });

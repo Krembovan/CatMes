@@ -16,6 +16,9 @@ DB_FILES = {
     'registry': os.path.join(BASE_DIR, 'chats_registry.json')
 }
 
+# Хранилище SID пользователей: {username: sid}
+user_sessions = {}
+
 def load_db(key):
     path = DB_FILES[key]
     if not os.path.exists(path):
@@ -31,6 +34,12 @@ def load_db(key):
 def save_db(key, data):
     with open(DB_FILES[key], 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+def notify_user(username, event, data):
+    """Отправить событие пользователю если он онлайн"""
+    sid = user_sessions.get(username)
+    if sid:
+        socketio.emit(event, data, room=sid)
 
 @app.route('/')
 def index():
@@ -68,6 +77,7 @@ def handle_auth(data):
             'bio': 'Пользователь SKAM', 'friends': [], 'requests': [], 'notifications': []
         }
         save_db('users', users)
+        user_sessions[un] = request.sid
         emit('auth_result', {'success': True, 'user': users[un]})
     else:
         if un not in users:
@@ -81,6 +91,7 @@ def handle_auth(data):
         user_data.setdefault('friends', [])
         user_data.setdefault('requests', [])
         user_data.setdefault('notifications', [])
+        user_sessions[un] = request.sid
         emit('auth_result', {'success': True, 'user': user_data})
 
 # ============== ПРОФИЛЬ ==============
@@ -125,10 +136,8 @@ def handle_friend_request(data):
         emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'})
         return
     
-    # Добавляем запрос
     target.setdefault('requests', []).append(my_un)
     
-    # Уведомление
     notif = {
         'id': str(int(time.time() * 1000)),
         'type': 'friend_request',
@@ -143,8 +152,7 @@ def handle_friend_request(data):
     save_db('users', users)
     
     emit('friend_msg', {'text': f'Запрос отправлен @{target_un}', 'type': 'success'})
-    # Отправляем уведомление получателю мгновенно
-    socketio.emit('incoming_friend_request', {'user': target, 'from': my_un}, room=target_un)
+    notify_user(target_un, 'incoming_friend_request', {'user': target, 'from': my_un})
 
 @socketio.on('accept_friend')
 def handle_accept(data):
@@ -176,7 +184,6 @@ def handle_accept(data):
         if my_un not in users[target_un].get('friends', []):
             users[target_un].setdefault('friends', []).append(my_un)
     
-    # Приватный чат
     reg = load_db('registry')
     a, b = sorted([my_un, target_un])
     chat_id = f"priv_{a}_{b}"
@@ -194,10 +201,8 @@ def handle_accept(data):
     save_db('users', users)
     
     emit('auth_result', {'success': True, 'user': users[my_un]})
-    # Уведомить второго
-    if target_un in users:
-        socketio.emit('friend_accepted_notify', {'user': users[target_un], 'by': my_un}, room=target_un)
     emit('room_list', reg, broadcast=True)
+    notify_user(target_un, 'friend_accepted_notify', {'user': users[target_un], 'by': my_un})
 
 @socketio.on('decline_friend')
 def handle_decline(data):
@@ -224,6 +229,41 @@ def handle_decline(data):
     
     save_db('users', users)
     emit('auth_result', {'success': True, 'user': users[my_un]})
+
+@socketio.on('remove_friend')
+def handle_remove_friend(data):
+    my_un = data.get('my_username', '').strip().lower()
+    target_un = data.get('target_username', '').strip().lower()
+    users = load_db('users')
+    
+    if my_un not in users:
+        return
+    
+    user = users[my_un]
+    
+    if target_un in user.get('friends', []):
+        user['friends'].remove(target_un)
+    
+    if target_un in users:
+        if my_un in users[target_un].get('friends', []):
+            users[target_un]['friends'].remove(my_un)
+    
+    # Удаляем приватный чат между ними
+    reg = load_db('registry')
+    a, b = sorted([my_un, target_un])
+    chat_id = f"priv_{a}_{b}"
+    if chat_id in reg:
+        del reg[chat_id]
+        save_db('registry', reg)
+        # Удаляем историю чата
+        hist = load_db('history')
+        hist = [m for m in hist if m.get('room') != chat_id]
+        save_db('history', hist)
+    
+    save_db('users', users)
+    emit('auth_result', {'success': True, 'user': users[my_un]})
+    emit('room_list', load_db('registry'), broadcast=True)
+    notify_user(target_un, 'friend_removed_notify', {'user': users[target_un], 'by': my_un})
 
 # ============== УДАЛЕНИЕ ЧАТОВ ==============
 @socketio.on('delete_chat')
@@ -278,6 +318,14 @@ def get_rooms():
         reg['Общий'] = {"name": "Общий канал", "type": "public", "users": []}
         save_db('registry', reg)
     emit('room_list', reg)
+
+# ============== ОТКЛЮЧЕНИЕ ==============
+@socketio.on('disconnect')
+def handle_disconnect():
+    for un, sid in list(user_sessions.items()):
+        if sid == request.sid:
+            del user_sessions[un]
+            break
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
