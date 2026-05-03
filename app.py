@@ -291,6 +291,53 @@ HTML_CONTENT = r'''<!DOCTYPE html>
         .toast.success { border-left: 4px solid var(--success); }
         .toast.error { border-left: 4px solid var(--danger); }
         .toast.info { border-left: 4px solid var(--accent); }
+
+/* Меню чата (три точки) */
+.chat-menu-btn {
+    margin-left: auto;
+    cursor: pointer;
+    opacity: 0;
+    transition: 0.2s;
+    font-size: 1.1rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    position: relative;
+}
+.chat-item:hover .chat-menu-btn { opacity: 1; }
+.chat-menu-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+/* Выпадающее меню */
+.context-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    z-index: 300;
+    min-width: 200px;
+    display: none;
+    overflow: hidden;
+}
+.context-menu.open { display: block; }
+.context-menu-item {
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: 0.15s;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+.context-menu-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.context-menu-item.danger { color: var(--danger); }
+.context-menu-item.danger:hover { background: rgba(239,68,68,0.1); }
+.context-menu-divider { height: 1px; background: var(--border); }
+
     </style>
 </head>
 <body>
@@ -602,24 +649,38 @@ HTML_CONTENT = r'''<!DOCTYPE html>
         socket.on('friend_msg', data => showToast(data.text, data.type || 'info'));
 
         // ========== КОМНАТЫ ==========
-        socket.on('room_list', rooms => {
-            const list = document.getElementById('roomList');
-            let html = `<div class="chat-item active" onclick="switchRoom('Общий')" data-room="Общий"><div class="chat-avatar">🌍</div><span>Общий канал</span></div>`;
-            Object.keys(rooms).forEach(id => {
-                if (id === 'Общий') return;
-                if (rooms[id].type === 'private') {
-                    if (myData && id.includes(myData.username)) {
-                        html += `<div class="chat-item" onclick="switchRoom('${id}')" data-room="${id}">
-                            <div class="chat-avatar">💬</div><span>${escapeHtml(rooms[id].name)}</span>
-                            <span class="delete-chat-btn" onclick="event.stopPropagation();deleteChat('${id}')" title="Удалить чат">🗑️</span>
-                        </div>`;
-                    }
-                } else {
-                    html += `<div class="chat-item" onclick="switchRoom('${id}')" data-room="${id}"><div class="chat-avatar">#</div><span>${escapeHtml(rooms[id].name)}</span></div>`;
-                }
-            });
-            list.innerHTML = html;
-        });
+	socket.on('room_list', rooms => {
+    const list = document.getElementById('roomList');
+    let html = `<div class="chat-item active" onclick="switchRoom('Общий')" data-room="Общий">
+        <div class="chat-avatar">🌍</div><span>Общий канал</span>
+    </div>`;
+    
+    Object.keys(rooms).forEach(id => {
+        if (id === 'Общий') return;
+        
+        if (rooms[id].type === 'private') {
+            if (myData && id.includes(myData.username)) {
+                // Находим собеседника
+                const users = rooms[id].users || [];
+                const friendUn = users.find(u => u !== myData.username) || '?';
+                const avatarUrl = `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${friendUn}`;
+                
+                html += `<div class="chat-item" onclick="switchRoom('${id}')" data-room="${id}" style="position:relative;">
+                    <img class="chat-avatar" src="${avatarUrl}" style="object-fit:cover;border-radius:12px;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                    <div class="chat-avatar" style="display:none;">💬</div>
+                    <span>${escapeHtml(rooms[id].name)}</span>
+                    <span class="chat-menu-btn" onclick="event.stopPropagation();toggleChatMenu(event, '${id}', '${friendUn}')">⋮</span>
+                </div>`;
+            }
+        } else {
+            html += `<div class="chat-item" onclick="switchRoom('${id}')" data-room="${id}">
+                <div class="chat-avatar">#</div><span>${escapeHtml(rooms[id].name)}</span>
+            </div>`;
+        }
+    });
+    
+    list.innerHTML = html;
+});
 
         function switchRoom(roomId) {
             currentRoom = roomId;
@@ -639,6 +700,7 @@ HTML_CONTENT = r'''<!DOCTYPE html>
             socket.emit('delete_chat', { chat_id: chatId, username: myData.username });
         }
 
+
         socket.on('chat_deleted', data => {
             if (data.success) {
                 showToast('Чат удалён', 'success');
@@ -646,6 +708,75 @@ HTML_CONTENT = r'''<!DOCTYPE html>
                 socket.emit('get_rooms');
             }
         });
+
+// ========== МЕНЮ ЧАТА (ТРИ ТОЧКИ) ==========
+let openMenuId = null;
+
+function toggleChatMenu(event, chatId, friendUn) {
+    event.stopPropagation();
+    
+    // Закрыть предыдущее меню
+    closeAllMenus();
+    
+    // Создать меню
+    const menu = document.createElement('div');
+    menu.className = 'context-menu open';
+    menu.id = 'chatContextMenu';
+    menu.innerHTML = `
+        <div class="context-menu-item" onclick="deleteChatForMe('${chatId}'); closeAllMenus();">
+            🚫 Удалить у себя
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item danger" onclick="deleteChatForBoth('${chatId}', '${friendUn}'); closeAllMenus();">
+            💀 Удалить у обоих
+        </div>
+    `;
+    
+    // Позиционировать
+    const btn = event.target;
+    const rect = btn.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.left = rect.left - 180 + 'px';
+    menu.style.top = rect.bottom + 5 + 'px';
+    
+    document.body.appendChild(menu);
+    openMenuId = chatId;
+    
+    // Закрыть при клике вне
+    setTimeout(() => {
+        document.addEventListener('click', closeAllMenus, { once: true });
+    }, 10);
+}
+
+function closeAllMenus() {
+    const menu = document.getElementById('chatContextMenu');
+    if (menu) menu.remove();
+    openMenuId = null;
+}
+
+// Удалить чат только у себя (отписываемся, но чат остаётся у другого)
+function deleteChatForMe(chatId) {
+    if (!confirm('Удалить этот чат у себя? Собеседник сохранит переписку.')) return;
+    
+    // Просто переключаемся на общий чат и скрываем этот из списка
+    if (currentRoom === chatId) switchRoom('Общий');
+    
+    // Удаляем историю только для этого пользователя локально
+    socket.emit('delete_chat_local', { chat_id: chatId, username: myData.username });
+    showToast('Чат удалён у вас', 'success');
+}
+
+// Удалить чат у обоих полностью
+function deleteChatForBoth(chatId, friendUn) {
+    if (!confirm(`Удалить переписку с @${friendUn} навсегда? История будет потеряна у обоих.`)) return;
+    socket.emit('delete_chat', { chat_id: chatId, username: myData.username });
+}
+
+// Закрыть меню по Escape
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeAllMenus();
+});
+
 
         // ========== СООБЩЕНИЯ ==========
         function sendMsg() {
@@ -847,6 +978,22 @@ def get_rooms():
         reg['Общий'] = {"name":"Общий канал","type":"public","users":[]}
         save_db('registry', reg)
     emit('room_list', reg)
+
+@socketio.on('delete_chat_local')
+def handle_delete_chat_local(data):
+    """Удаление чата только у одного пользователя — просто удаляем историю"""
+    chat_id = data.get('chat_id', '')
+    username = data.get('username', '').lower()
+    
+    if not chat_id or not chat_id.startswith('priv_'):
+        return
+    
+    # Удаляем сообщения этого пользователя в этом чате
+    hist = load_db('history')
+    hist = [m for m in hist if not (m.get('room') == chat_id and m.get('username') == username)]
+    save_db('history', hist)
+    
+    emit('chat_deleted', {'success': True, 'chat_id': chat_id})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
