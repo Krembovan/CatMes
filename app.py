@@ -142,35 +142,45 @@ def handle_accept(data):
     target_un = data.get('target_username', '').lower()
     users = load_db('users')
     
-    if my_un not in users: return
+    if my_un not in users:
+        return
+    
     user = users[my_un]
-    if target_un not in user.get('requests', []): return
     
+    # Ищем запрос от target_un
+    if target_un not in user.get('requests', []):
+        # Может уже принят? Проверяем друзей
+        if target_un in user.get('friends', []):
+            emit('auth_result', {'success': True, 'user': user})
+            return
+        return
+    
+    # Удаляем запрос
     user['requests'].remove(target_un)
-    user.setdefault('friends', []).append(target_un)
     
+    # Добавляем в друзья
+    if target_un not in user.get('friends', []):
+        user.setdefault('friends', []).append(target_un)
+    
+    # Взаимность
     if target_un in users:
-        users[target_un].setdefault('friends', []).append(my_un)
-        notif = {
-            'id': str(int(time.time() * 1000)),
-            'type': 'friend_accepted',
-            'from': my_un,
-            'from_name': users[my_un]['display_name'],
-            'text': f'@{my_un} принял ваш запрос',
-            'timestamp': time.time(),
-            'read': False
-        }
-        users[target_un].setdefault('notifications', []).insert(0, notif)
+        if my_un not in users[target_un].get('friends', []):
+            users[target_un].setdefault('friends', []).append(my_un)
     
+    # Создаём приватный чат
     reg = load_db('registry')
     chat_id = f"priv_{min(my_un, target_un)}_{max(my_un, target_un)}"
     if chat_id not in reg:
-        reg[chat_id] = {"name": f"Чат @{target_un}", "type": "private", "users": [my_un, target_un]}
+        reg[chat_id] = {
+            "name": f"Чат @{target_un}",
+            "type": "private",
+            "users": [my_un, target_un]
+        }
         save_db('registry', reg)
     
-    user.setdefault('notifications', [])
-    user['notifications'] = [n for n in user['notifications'] if not (n['type'] == 'friend_request' and n['from'] == target_un)]
     save_db('users', users)
+    
+    # Отправляем обновлённые данные
     emit('auth_result', {'success': True, 'user': users[my_un]})
     emit('room_list', reg, broadcast=True)
 
