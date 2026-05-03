@@ -71,9 +71,28 @@ def index():
 ADMIN_USERNAME = 'admin'
 ADMIN_PASSWORD = 'krembovan@181818'
 
+# ============== РОЛИ ==============
+ROLES = {
+    'krembovan': 'owner',  # ← твой юзернейм
+}
+
+ROLE_PERMS = {
+    'owner': ['admin_panel', 'manage_roles', 'delete_users', 'delete_messages', 'view_stats'],
+    'developer': ['admin_panel', 'delete_users', 'delete_messages', 'view_stats'],
+    'admin': ['admin_panel', 'delete_users', 'view_stats'],
+    'moderator': ['admin_panel', 'delete_messages'],
+    'user': []
+}
+
+def get_role(username):
+    return ROLES.get(username.lower(), 'user')
+
+def has_perm(username, perm):
+    role = get_role(username)
+    return perm in ROLE_PERMS.get(role, [])
+
 @app.route('/admin')
 def admin_panel():
-    # Простейшая HTTP-авторизация
     auth = request.authorization
     if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
         return ('Доступ запрещён', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
@@ -81,6 +100,9 @@ def admin_panel():
     db = get_db()
     users = db.execute("SELECT username, data FROM users").fetchall()
     msg_count = db.execute("SELECT COUNT(*) as c FROM messages").fetchone()['c']
+    
+    # Последние сообщения для модерации
+    last_msgs = db.execute("SELECT * FROM messages ORDER BY id DESC LIMIT 10").fetchall()
     db.close()
     
     users_list = []
@@ -89,9 +111,9 @@ def admin_panel():
         users_list.append({
             'username': u['username'],
             'display_name': d.get('display_name', ''),
+            'role': d.get('role', 'user'),
             'friends': len(d.get('friends', [])),
-            'requests': len(d.get('requests', [])),
-            'notifications': len(d.get('notifications', []))
+            'requests': len(d.get('requests', []))
         })
     
     html = '''<!DOCTYPE html>
@@ -110,10 +132,19 @@ def admin_panel():
         th { background: #7c5cfc; padding: 12px 16px; text-align: left; font-size: 0.8rem; text-transform: uppercase; }
         td { padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); }
         tr:hover { background: rgba(255,255,255,0.02); }
-        .btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.75rem; font-weight: 600; }
+        .btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.75rem; font-weight: 600; margin: 2px; }
         .btn-danger { background: #ef4444; color: white; }
-        .btn-info { background: #38bdf8; color: #0d1117; }
-        a { color: #38bdf8; text-decoration: none; }
+        .btn-sm { background: #7c5cfc; color: white; }
+        .badge { padding: 3px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; }
+        .badge-owner { background: #f59e0b; color: #0d1117; }
+        .badge-dev { background: #38bdf8; color: #0d1117; }
+        .badge-admin { background: #ef4444; color: white; }
+        .badge-mod { background: #10b981; color: white; }
+        .badge-user { background: #94a3b8; color: #0d1117; }
+        .section { margin-top: 30px; }
+        .section h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 10px; }
+        .msg-item { background: #161b22; padding: 10px 16px; border-radius: 8px; margin: 5px 0; font-size: 0.85rem; }
+        select { background: #161b22; color: white; border: 1px solid rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 6px; }
     </style>
 </head>
 <body>
@@ -121,27 +152,57 @@ def admin_panel():
     <div class="stats">
         <div class="stat-card"><div class="stat-value">''' + str(len(users_list)) + '''</div><div class="stat-label">Пользователей</div></div>
         <div class="stat-card"><div class="stat-value">''' + str(msg_count) + '''</div><div class="stat-label">Сообщений</div></div>
-        <div class="stat-card"><div class="stat-value">''' + str(sum(u['friends'] for u in users_list)) + '''</div><div class="stat-label">Дружб</div></div>
     </div>
-    <table>
-        <tr><th>Username</th><th>Имя</th><th>Друзья</th><th>Запросы</th><th>Уведомления</th><th>Действия</th></tr>'''
+    
+    <div class="section">
+        <h2>👥 Пользователи</h2>
+        <table>
+            <tr><th>Username</th><th>Имя</th><th>Роль</th><th>Друзья</th><th>Запросы</th><th>Действия</th></tr>'''
     
     for u in users_list:
+        badge_class = 'badge-' + ('owner' if u['role'] == 'owner' else 'dev' if u['role'] == 'developer' else 'admin' if u['role'] == 'admin' else 'mod' if u['role'] == 'moderator' else 'user')
+        role_name = {'owner': 'Владелец', 'developer': 'Разработчик', 'admin': 'Админ', 'moderator': 'Модер', 'user': 'Пользователь'}.get(u['role'], u['role'])
+        
         html += f'''<tr>
             <td>@{u['username']}</td>
             <td>{u['display_name']}</td>
+            <td><span class="badge {badge_class}">{role_name}</span></td>
             <td>{u['friends']}</td>
             <td>{u['requests']}</td>
-            <td>{u['notifications']}</td>
-            <td><button class="btn btn-danger" onclick="deleteUser('{u['username']}')">Удалить</button></td>
+            <td>
+                <select onchange="setRole('{u['username']}', this.value)" style="width:100px;">
+                    <option value="user" {"selected" if u['role'] == 'user' else ""}>Пользователь</option>
+                    <option value="moderator" {"selected" if u['role'] == 'moderator' else ""}>Модератор</option>
+                    <option value="admin" {"selected" if u['role'] == 'admin' else ""}>Админ</option>
+                </select>
+                <button class="btn btn-danger" onclick="deleteUser('{u['username']}')">Удалить</button>
+            </td>
         </tr>'''
     
-    html += '''</table>
+    html += '''</table></div>
+    
+    <div class="section">
+        <h2>📝 Последние сообщения</h2>'''
+    
+    for m in last_msgs:
+        html += f'<div class="msg-item"><b>@{m["username"]}</b>: {m["text"][:100]} <span style="color:#94a3b8;font-size:0.7rem;">({m["room"]})</span> <button class="btn btn-sm" onclick="deleteMsg({m["id"]})" style="float:right;">✕</button></div>'
+    
+    html += '''</div>
     <script>
         function deleteUser(un) {
-            if (!confirm('Удалить пользователя @' + un + ' навсегда?')) return;
+            if (!confirm('Удалить @' + un + ' навсегда?')) return;
             fetch('/admin/delete/' + un, { method: 'POST' }).then(r => r.json()).then(d => {
                 alert(d.message); location.reload();
+            });
+        }
+        function setRole(un, role) {
+            fetch('/admin/setrole/' + un + '/' + role, { method: 'POST' }).then(r => r.json()).then(d => {
+                alert(d.message); location.reload();
+            });
+        }
+        function deleteMsg(id) {
+            fetch('/admin/deletemsg/' + id, { method: 'POST' }).then(r => r.json()).then(d => {
+                location.reload();
             });
         }
     </script>
@@ -149,19 +210,39 @@ def admin_panel():
 </html>'''
     return html
 
-@app.route('/admin/delete/<username>', methods=['POST'])
-def admin_delete_user(username):
+@app.route('/admin/setrole/<username>/<role>', methods=['POST'])
+def admin_set_role(username, role):
     auth = request.authorization
     if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
         return json.dumps({'message': 'Доступ запрещён'}), 401
     
+    if role not in ['user', 'moderator', 'admin']:
+        return json.dumps({'message': 'Неверная роль'}), 400
+    
+    # Нельзя менять owner
     un = username.lower()
+    if get_role(un) == 'owner':
+        return json.dumps({'message': 'Нельзя изменить роль владельца'}), 403
+    
+    ROLES[un] = role
+    users = load_users()
+    if un in users:
+        users[un]['role'] = role
+        save_user(un, users[un])
+    
+    return json.dumps({'message': f'Роль @{un} изменена на {role}'})
+
+@app.route('/admin/deletemsg/<int:msg_id>', methods=['POST'])
+def admin_delete_msg(msg_id):
+    auth = request.authorization
+    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+        return json.dumps({'message': 'Доступ запрещён'}), 401
+    
     db = get_db()
-    db.execute("DELETE FROM users WHERE username = ?", (un,))
-    db.execute("DELETE FROM messages WHERE username = ?", (un,))
+    db.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
     db.commit()
     db.close()
-    return json.dumps({'message': f'Пользователь @{un} удалён'})
+    return json.dumps({'message': 'Сообщение удалено'})
 
 @socketio.on('auth')
 def handle_auth(data):
@@ -205,6 +286,7 @@ def handle_auth(data):
             return
         
         user_data = users[un]
+        user_data['role'] = get_role(un)
         user_data.setdefault('friends', [])
         user_data.setdefault('requests', [])
         user_data.setdefault('notifications', [])
