@@ -69,7 +69,7 @@ def index():
 
 # ============== АДМИН-ПАНЕЛЬ ==============
 ADMIN_USERNAME = 'admin'
-ADMIN_PASSWORD = 'skam_admin_2024'
+ADMIN_PASSWORD = 'krembovan@181818'
 
 @app.route('/admin')
 def admin_panel():
@@ -162,19 +162,6 @@ def admin_delete_user(username):
     db.commit()
     db.close()
     return json.dumps({'message': f'Пользователь @{un} удалён'})
-
-@app.route('/db')
-def view_db():
-    db = get_db()
-    users = db.execute("SELECT username, data FROM users").fetchall()
-    msgs = db.execute("SELECT COUNT(*) as c FROM messages").fetchone()
-    db.close()
-    html = '<h2>Пользователи:</h2><ul>'
-    for u in users:
-        d = json.loads(u['data'])
-        html += f'<li>@{u["username"]} — {d.get("display_name")} | Друзей: {len(d.get("friends",[]))}</li>'
-    html += f'</ul><h2>Сообщений: {msgs["c"]}</h2>'
-    return html
 
 @socketio.on('auth')
 def handle_auth(data):
