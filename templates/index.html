@@ -261,11 +261,16 @@
 <div id="friendOverlay" class="modal-overlay">
     <div class="modal">
         <h2>🔍 Найти друга</h2>
+
         <div class="input-group"><label>Username</label><input type="text" id="searchUser" placeholder="@username" onfocus="if(this.value=='')this.value='@';" oninput="if(!this.value.startsWith('@'))this.value='@'+this.value.replace('@','');"></div>
         <div id="friendError" class="error-text"></div>
         <button class="btn btn-primary" onclick="sendFriendReq()">📨 Отправить запрос</button>
         <button class="btn btn-secondary" onclick="closeModal('friendOverlay')">Отмена</button>
     </div>
+</div>
+
+<div id="userProfileOverlay" class="modal-overlay">
+    <div class="modal" id="userProfileContent"></div>
 </div>
 
 <div class="notif-overlay" id="notifPanel">
@@ -529,6 +534,58 @@ function removeFriend(un) {
     if (!confirm('Удалить @' + un + ' из друзей?')) return;
     socket.emit('remove_friend', { my_username: myData.username, target_username: un });
 }
+function viewProfile(un) {
+    if (un === myData.username) {
+        openModal('profileOverlay');
+        loadProfile();
+        return;
+    }
+    
+    socket.emit('get_user_profile', { username: un, requester: myData.username });
+}
+
+socket.on('user_profile', function(data) {
+    if (data.error) {
+        showToast(data.error, 'error');
+        return;
+    }
+    
+    var u = data.user;
+    var isFriend = myData.friends && myData.friends.indexOf(data.username) !== -1;
+    var isRequested = myData.requests && myData.requests.indexOf(data.username) !== -1;
+    var isRequester = u.requests && u.requests.indexOf(myData.username) !== -1;
+    
+    var html = '<h2>👤 Профиль</h2>';
+    html += '<img src="' + escapeHtml(u.avatar || '') + '" class="avatar-large" alt="Аватар">';
+    html += '<div style="text-align:center; font-size:1.2rem; font-weight:700;">' + escapeHtml(u.display_name) + '</div>';
+    html += '<div style="text-align:center; color:var(--text-secondary);">@' + escapeHtml(data.username) + '</div>';
+    html += '<div style="text-align:center; margin:10px 0; padding:8px; background:var(--surface); border-radius:8px;">' + escapeHtml(u.bio || '') + '</div>';
+    html += '<div style="display:flex; gap:20px; justify-content:center; margin:10px 0; color:var(--text-secondary); font-size:0.85rem;">';
+    html += '<span>Друзей: ' + (u.friends ? u.friends.length : 0) + '</span>';
+    html += '</div>';
+    
+    if (!isFriend && !isRequester && !isRequested) {
+        html += '<button class="btn btn-primary" onclick="sendFriendReqTo(\'' + data.username + '\')">📨 Добавить в друзья</button>';
+    } else if (isRequested) {
+        html += '<button class="btn btn-primary" onclick="acceptFriend(\'' + data.username + '\');closeModal(\'userProfileOverlay\');">✓ Принять запрос</button>';
+    } else if (isRequester) {
+        html += '<button class="btn btn-secondary" disabled>⏳ Запрос отправлен</button>';
+    } else if (isFriend) {
+        html += '<button class="btn btn-primary" onclick="startDM(\'' + data.username + '\');closeModal(\'userProfileOverlay\');">💬 Написать</button>';
+    }
+    
+    html += '<button class="btn btn-secondary" onclick="closeModal(\'userProfileOverlay\')">Закрыть</button>';
+    
+    var modal = document.getElementById('userProfileContent');
+    modal.innerHTML = html;
+    openModal('userProfileOverlay');
+});
+
+function sendFriendReqTo(un) {
+    socket.emit('send_friend_request', { my_username: myData.username, target_username: un });
+    showToast('Запрос отправлен', 'success');
+    closeModal('userProfileOverlay');
+}
 
 socket.on('friend_msg', function(data) { showToast(data.text, data.type || 'info'); });
 
@@ -602,8 +659,8 @@ function renderMessage(msg) {
     var div = document.createElement('div');
     div.className = 'msg' + (isMy ? ' my' : '');
     
-    var avatarHtml = '<img class="msg-avatar" src="' + escapeHtml(msg.avatar || '') + '" onerror="this.style.display=\'none\'">';
-    var authorHtml = isMy ? '' : '<div class="msg-author">' + escapeHtml(msg.user) + '</div>';
+    var avatarHtml = '<img class="msg-avatar" src="' + escapeHtml(msg.avatar || '') + '" onerror="this.style.display=\'none\'" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;" title="Посмотреть профиль">';
+    var authorHtml = isMy ? '' : '<div class="msg-author" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;color:var(--accent);" title="Посмотреть профиль">' + escapeHtml(msg.user) + '</div>';
     
     div.innerHTML = avatarHtml + '<div class="msg-bubble">' + authorHtml + escapeHtml(msg.text) + '</div>';
     box.appendChild(div);

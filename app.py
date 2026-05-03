@@ -467,6 +467,27 @@ def on_join(data):
 @socketio.on('get_rooms')
 def get_rooms():
     emit('room_list', {'Общий': {"name": "Общий канал", "type": "public"}})
+@socketio.on('get_user_profile')
+def handle_get_user_profile(data):
+    target_un = data.get('username', '').strip().lower()
+    users = load_users()
+    
+    if target_un not in users:
+        emit('user_profile', {'error': 'Пользователь не найден'})
+        return
+    
+    user = users[target_un]
+    emit('user_profile', {
+        'username': target_un,
+        'user': {
+            'display_name': user.get('display_name', target_un),
+            'avatar': user.get('avatar', ''),
+            'bio': user.get('bio', ''),
+            'friends': user.get('friends', []),
+            'requests': user.get('requests', []),
+            'role': user.get('role', 'user')
+        }
+    })
 
 @socketio.on('disconnect')
 def handle_disconnect():
