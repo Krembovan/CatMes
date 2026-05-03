@@ -67,6 +67,102 @@ def index():
     from flask import render_template
     return render_template('index.html')
 
+# ============== АДМИН-ПАНЕЛЬ ==============
+ADMIN_USERNAME = 'admin'
+ADMIN_PASSWORD = 'skam_admin_2024'
+
+@app.route('/admin')
+def admin_panel():
+    # Простейшая HTTP-авторизация
+    auth = request.authorization
+    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+        return ('Доступ запрещён', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+    
+    db = get_db()
+    users = db.execute("SELECT username, data FROM users").fetchall()
+    msg_count = db.execute("SELECT COUNT(*) as c FROM messages").fetchone()['c']
+    db.close()
+    
+    users_list = []
+    for u in users:
+        d = json.loads(u['data'])
+        users_list.append({
+            'username': u['username'],
+            'display_name': d.get('display_name', ''),
+            'friends': len(d.get('friends', [])),
+            'requests': len(d.get('requests', [])),
+            'notifications': len(d.get('notifications', []))
+        })
+    
+    html = '''<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>SKAM Admin Panel</title>
+    <style>
+        body { background: #0d1117; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; padding: 30px; }
+        h1 { background: linear-gradient(135deg, #7c5cfc, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stats { display: flex; gap: 20px; margin: 20px 0; }
+        .stat-card { background: #161b22; padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.06); flex: 1; text-align: center; }
+        .stat-value { font-size: 2rem; font-weight: 900; color: #7c5cfc; }
+        .stat-label { font-size: 0.8rem; color: #94a3b8; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #161b22; border-radius: 16px; overflow: hidden; }
+        th { background: #7c5cfc; padding: 12px 16px; text-align: left; font-size: 0.8rem; text-transform: uppercase; }
+        td { padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        tr:hover { background: rgba(255,255,255,0.02); }
+        .btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.75rem; font-weight: 600; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-info { background: #38bdf8; color: #0d1117; }
+        a { color: #38bdf8; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <h1>⚡ SKAM Admin Panel</h1>
+    <div class="stats">
+        <div class="stat-card"><div class="stat-value">''' + str(len(users_list)) + '''</div><div class="stat-label">Пользователей</div></div>
+        <div class="stat-card"><div class="stat-value">''' + str(msg_count) + '''</div><div class="stat-label">Сообщений</div></div>
+        <div class="stat-card"><div class="stat-value">''' + str(sum(u['friends'] for u in users_list)) + '''</div><div class="stat-label">Дружб</div></div>
+    </div>
+    <table>
+        <tr><th>Username</th><th>Имя</th><th>Друзья</th><th>Запросы</th><th>Уведомления</th><th>Действия</th></tr>'''
+    
+    for u in users_list:
+        html += f'''<tr>
+            <td>@{u['username']}</td>
+            <td>{u['display_name']}</td>
+            <td>{u['friends']}</td>
+            <td>{u['requests']}</td>
+            <td>{u['notifications']}</td>
+            <td><button class="btn btn-danger" onclick="deleteUser('{u['username']}')">Удалить</button></td>
+        </tr>'''
+    
+    html += '''</table>
+    <script>
+        function deleteUser(un) {
+            if (!confirm('Удалить пользователя @' + un + ' навсегда?')) return;
+            fetch('/admin/delete/' + un, { method: 'POST' }).then(r => r.json()).then(d => {
+                alert(d.message); location.reload();
+            });
+        }
+    </script>
+</body>
+</html>'''
+    return html
+
+@app.route('/admin/delete/<username>', methods=['POST'])
+def admin_delete_user(username):
+    auth = request.authorization
+    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+        return json.dumps({'message': 'Доступ запрещён'}), 401
+    
+    un = username.lower()
+    db = get_db()
+    db.execute("DELETE FROM users WHERE username = ?", (un,))
+    db.execute("DELETE FROM messages WHERE username = ?", (un,))
+    db.commit()
+    db.close()
+    return json.dumps({'message': f'Пользователь @{un} удалён'})
+
 @app.route('/db')
 def view_db():
     db = get_db()
