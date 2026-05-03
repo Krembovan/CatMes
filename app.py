@@ -9,15 +9,13 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Фикс для Render — используем /tmp/ если /opt/ недоступен
+BASE_DIR = os.environ.get('RENDER_DISK_PATH', os.path.dirname(os.path.abspath(__file__)))
 DB_FILES = {
     'history': os.path.join(BASE_DIR, 'history.json'),
     'users': os.path.join(BASE_DIR, 'users.json'),
     'registry': os.path.join(BASE_DIR, 'chats_registry.json')
 }
-
-# Хранилище SID пользователей: {username: sid}
-user_sessions = {}
 
 def load_db(key):
     path = DB_FILES[key]
