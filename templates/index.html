@@ -2,98 +2,171 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>SKAM TEST</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKAM Messenger</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        body {
-            background: #0d1117;
-            color: #e2e8f0;
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .container {
-            text-align: center;
-            padding: 40px;
-            background: #161b22;
-            border-radius: 20px;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        h1 {
-            background: linear-gradient(135deg, #7c5cfc, #38bdf8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            font-size: 3rem;
-            margin: 0;
-        }
-        .status { color: #10b981; margin-top: 20px; }
-        input {
-            padding: 12px 20px;
-            border-radius: 10px;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: #0d1117;
-            color: white;
-            margin: 10px;
-            font-size: 1rem;
-        }
-        button {
-            padding: 12px 30px;
-            border-radius: 10px;
-            border: none;
-            background: #7c5cfc;
-            color: white;
+        /* Все стили из предыдущей версии + новые */
+        
+        /* Колокольчик уведомлений */
+        .notification-bell {
+            position: relative;
             cursor: pointer;
-            font-size: 1rem;
-            font-weight: bold;
         }
-        button:hover { background: #6a48e0; }
+        .badge-count {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ef4444;
+            color: white;
+            font-size: 0.6rem;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            display: none;
+        }
+        .badge-count.show { display: flex; }
+        
+        /* Выпадающий список уведомлений */
+        .notifications-dropdown {
+            position: absolute;
+            top: 60px;
+            right: 10px;
+            width: 350px;
+            background: #161b22;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            z-index: 100;
+            display: none;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .notifications-dropdown.open { display: block; }
+        
+        .notif-item {
+            padding: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: 0.2s;
+        }
+        .notif-item:hover { background: rgba(255,255,255,0.03); }
+        .notif-actions { display: flex; gap: 8px; margin-top: 8px; }
+        .btn-accept, .btn-decline {
+            padding: 5px 15px;
+            border-radius: 20px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .btn-accept { background: #7c5cfc; color: white; }
+        .btn-decline { background: transparent; color: #ef4444; border: 1px solid #ef4444; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>⚡ SKAM</h1>
-        <p>v3.0 • Новый дизайн загружен!</p>
-        <div class="status" id="status">🟢 Подключение...</div>
-        <input type="text" id="username" placeholder="Username">
-        <input type="password" id="password" placeholder="Пароль">
-        <br>
-        <button onclick="login()">Войти</button>
-        <button onclick="register()">Регистрация</button>
+    <!-- ... предыдущий код ... -->
+    
+    <!-- Добавить в sidebar-header: -->
+    <div class="notification-bell" onclick="toggleNotifications()">
+        <span style="font-size:1.3rem;">🔔</span>
+        <span class="badge-count" id="notifBadge">0</span>
+        
+        <div class="notifications-dropdown" id="notifDropdown">
+            <div style="padding:15px; font-weight:600; border-bottom:1px solid rgba(255,255,255,0.1);">Уведомления</div>
+            <div id="notifList" style="padding:10px;">Нет уведомлений</div>
+        </div>
     </div>
-
+    
+    <!-- В список чатов добавить кнопку удаления: -->
+    <!-- Для приватных чатов показывать 🗑️ -->
+    
     <script>
-        const socket = io();
+        // ... предыдущий код ...
         
-        socket.on('connect', () => {
-            document.getElementById('status').innerHTML = '🟢 Подключено к серверу!';
+        // ============== УВЕДОМЛЕНИЯ ==============
+        let notifications = [];
+        
+        function toggleNotifications() {
+            const dropdown = document.getElementById('notifDropdown');
+            dropdown.classList.toggle('open');
+            updateNotificationsList();
+        }
+        
+        socket.on('new_notification', (notif) => {
+            notifications.unshift(notif);
+            updateBadge();
+            showToast(notif.text, 'info');
         });
         
-        function login() {
-            const un = document.getElementById('username').value.trim();
-            const pwd = document.getElementById('password').value;
-            if (un && pwd) {
-                socket.emit('auth', { action: 'login', username: un, password: pwd });
-            }
+        function updateBadge() {
+            const unread = notifications.filter(n => !n.read).length;
+            const badge = document.getElementById('notifBadge');
+            badge.textContent = unread;
+            badge.classList.toggle('show', unread > 0);
         }
         
-        function register() {
-            const un = document.getElementById('username').value.trim();
-            const pwd = document.getElementById('password').value;
-            if (un && pwd) {
-                socket.emit('auth', { action: 'register', username: un, display_name: un, password: pwd, password2: pwd });
+        function updateNotificationsList() {
+            const list = document.getElementById('notifList');
+            if (notifications.length === 0) {
+                list.innerHTML = '<div style="padding:20px;text-align:center;color:#94a3b8;">Нет уведомлений</div>';
+                return;
             }
+            
+            list.innerHTML = notifications.map(n => `
+                <div class="notif-item">
+                    <div style="flex:1;">
+                        <div style="font-size:0.9rem;">${escapeHtml(n.text)}</div>
+                        <div style="font-size:0.7rem;color:#94a3b8;">${new Date(n.timestamp * 1000).toLocaleString()}</div>
+                        ${n.type === 'friend_request' ? `
+                            <div class="notif-actions">
+                                <button class="btn-accept" onclick="acceptFriend('${n.from}'); toggleNotifications();">Принять</button>
+                                <button class="btn-decline" onclick="declineFriend('${n.from}'); toggleNotifications();">Отклонить</button>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
         }
         
-        socket.on('auth_result', (data) => {
+        function declineFriend(un) {
+            socket.emit('decline_friend', { my_username: myData.username, target_username: un });
+        }
+        
+        // ============== УДАЛЕНИЕ ЧАТА ==============
+        function deleteChat(chatId) {
+            if (!confirm('Удалить эту переписку? История сообщений будет потеряна у обоих участников.')) return;
+            socket.emit('delete_chat', { chat_id: chatId, username: myData.username });
+        }
+        
+        socket.on('chat_deleted', (data) => {
             if (data.success) {
-                document.getElementById('status').innerHTML = '✅ Успешный вход: ' + data.user.display_name;
+                showToast('Чат удалён', 'success');
+                if (currentRoom === data.chat_id) {
+                    switchRoom('Общий');
+                }
+                socket.emit('get_rooms');
             } else {
-                alert('Ошибка: ' + data.error);
+                showToast(data.error || 'Ошибка удаления', 'error');
             }
         });
+        
+        // Обновлённый updateFriendList с колбэками
+        function updateFriendList() {
+            if (!myData) return;
+            notifications = myData.notifications || [];
+            updateBadge();
+            // ... остальной код списка друзей ...
+        }
+        
+        // Добавить в render комнат кнопку удаления для priv чатов:
+        // ${id.startsWith('priv_') ? `<span onclick="event.stopPropagation(); deleteChat('${id}')" style="margin-left:auto;cursor:pointer;">🗑️</span>` : ''}
     </script>
 </body>
 </html>
