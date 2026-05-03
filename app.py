@@ -67,6 +67,19 @@ def index():
     from flask import render_template
     return render_template('index.html')
 
+@app.route('/db')
+def view_db():
+    db = get_db()
+    users = db.execute("SELECT username, data FROM users").fetchall()
+    msgs = db.execute("SELECT COUNT(*) as c FROM messages").fetchone()
+    db.close()
+    html = '<h2>Пользователи:</h2><ul>'
+    for u in users:
+        d = json.loads(u['data'])
+        html += f'<li>@{u["username"]} — {d.get("display_name")} | Друзей: {len(d.get("friends",[]))}</li>'
+    html += f'</ul><h2>Сообщений: {msgs["c"]}</h2>'
+    return html
+
 @socketio.on('auth')
 def handle_auth(data):
     action = data.get('action', 'login')
