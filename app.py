@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 
-import json, os, time
+import sqlite3, json, os, time
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room
 
@@ -10,35 +10,49 @@ app.config['SECRET_KEY'] = 'skam_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB = {}
-DB_FILES = {
-    'history': os.path.join(BASE_DIR, 'history.json'),
-    'users': os.path.join(BASE_DIR, 'users.json'),
-    'registry': os.path.join(BASE_DIR, 'chats_registry.json')
-}
+DB_PATH = os.path.join(BASE_DIR, 'skam.db')
 user_sessions = {}
 
-def load_db(key):
-    path = DB_FILES[key]
-    if key not in DB:
-        if os.path.exists(path):
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    DB[key] = json.load(f)
-            except:
-                DB[key] = [] if key == 'history' else {}
-        else:
-            DB[key] = [] if key == 'history' else {}
-    return DB[key]
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
-def save_db(key, data):
-    DB[key] = data
-    path = DB_FILES[key]
-    try:
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error saving {key}: {e}", flush=True)
+def init_db():
+    db = get_db()
+    db.executescript('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            data TEXT
+        );
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room TEXT,
+            username TEXT,
+            user TEXT,
+            avatar TEXT,
+            text TEXT,
+            timestamp REAL
+        );
+    ''')
+    db.commit()
+    db.close()
+
+init_db()
+
+def load_users():
+    db = get_db()
+    rows = db.execute("SELECT username, data FROM users").fetchall()
+    db.close()
+    return {row['username']: json.loads(row['data']) for row in rows}
+
+def save_user(username, data):
+    db = get_db()
+    db.execute("INSERT OR REPLACE INTO users (username, data) VALUES (?, ?)",
+               (username, json.dumps(data, ensure_ascii=False)))
+    db.commit()
+    db.close()
 
 def notify_user(username, event, data):
     sid = user_sessions.get(username)
@@ -68,7 +82,7 @@ def handle_auth(data):
         emit('auth_result', {'success': False, 'error': 'Пароль: минимум 4 символа'})
         return
     
-    users = load_db('users')
+    users = load_users()
     
     if action == 'register':
         if pwd != pwd2:
@@ -78,14 +92,14 @@ def handle_auth(data):
             emit('auth_result', {'success': False, 'error': 'Пользователь уже существует'})
             return
         
-        users[un] = {
+        new_user = {
             'username': un, 'display_name': dn or un, 'pass': pwd,
             'avatar': f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
             'bio': 'Пользователь SKAM', 'friends': [], 'requests': [], 'notifications': []
         }
-        save_db('users', users)
+        save_user(un, new_user)
         user_sessions[un] = request.sid
-        emit('auth_result', {'success': True, 'user': users[un]})
+        emit('auth_result', {'success': True, 'user': new_user})
     else:
         if un not in users:
             emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
@@ -104,7 +118,7 @@ def handle_auth(data):
 @socketio.on('update_profile')
 def handle_profile_update(data):
     un = data.get('username', '').lower()
-    users = load_db('users')
+    users = load_users()
     if un not in users: return
     if data.get('display_name', '').strip():
         users[un]['display_name'] = data['display_name'].strip()
@@ -112,7 +126,7 @@ def handle_profile_update(data):
         users[un]['bio'] = data['bio'].strip()
     if data.get('avatar', '').strip():
         users[un]['avatar'] = data['avatar'].strip()
-    save_db('users', users)
+    save_user(un, users[un])
     emit('profile_updated', {'user': users[un]})
 
 @socketio.on('send_friend_request')
@@ -124,7 +138,7 @@ def handle_friend_request(data):
         emit('friend_msg', {'text': 'Введите имя', 'type': 'error'})
         return
     
-    users = load_db('users')
+    users = load_users()
     
     if target_un not in users:
         emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'})
@@ -155,7 +169,7 @@ def handle_friend_request(data):
     }
     target.setdefault('notifications', []).insert(0, notif)
     
-    save_db('users', users)
+    save_user(target_un, target)
     emit('friend_msg', {'text': f'Запрос отправлен @{target_un}', 'type': 'success'})
     notify_user(target_un, 'incoming_friend_request', {'user': target, 'from': my_un})
 
@@ -164,12 +178,10 @@ def handle_accept(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
     
-    users = load_db('users')
+    users = load_users()
     if my_un not in users: return
     
     user = users[my_un]
-    
-    # Ищем запрос
     found = None
     for req in user.get('requests', []):
         if req.lower() == target_un:
@@ -184,19 +196,20 @@ def handle_accept(data):
     if target_un in users:
         if my_un not in users[target_un].get('friends', []):
             users[target_un].setdefault('friends', []).append(my_un)
+            save_user(target_un, users[target_un])
     
     user.setdefault('notifications', [])
     user['notifications'] = [n for n in user['notifications'] if not (n.get('type') == 'friend_request' and n.get('from', '').lower() == target_un)]
     
-    save_db('users', users)
-    emit('auth_result', {'success': True, 'user': users[my_un]})
-    notify_user(target_un, 'friend_accepted_notify', {'user': users[target_un], 'by': my_un})
+    save_user(my_un, user)
+    emit('auth_result', {'success': True, 'user': user})
+    notify_user(target_un, 'friend_accepted_notify', {'user': users.get(target_un), 'by': my_un})
 
 @socketio.on('decline_friend')
 def handle_decline(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
-    users = load_db('users')
+    users = load_users()
     if my_un not in users: return
     
     user = users[my_un]
@@ -210,24 +223,25 @@ def handle_decline(data):
     
     user.setdefault('notifications', [])
     user['notifications'] = [n for n in user['notifications'] if not (n.get('type') == 'friend_request' and n.get('from', '').lower() == target_un)]
-    save_db('users', users)
-    emit('auth_result', {'success': True, 'user': users[my_un]})
+    save_user(my_un, user)
+    emit('auth_result', {'success': True, 'user': user})
 
 @socketio.on('remove_friend')
 def handle_remove_friend(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
-    users = load_db('users')
+    users = load_users()
     if my_un not in users: return
     
     if target_un in users[my_un].get('friends', []):
         users[my_un]['friends'].remove(target_un)
+        save_user(my_un, users[my_un])
     if target_un in users and my_un in users[target_un].get('friends', []):
         users[target_un]['friends'].remove(my_un)
+        save_user(target_un, users[target_un])
     
-    save_db('users', users)
     emit('auth_result', {'success': True, 'user': users[my_un]})
-    notify_user(target_un, 'friend_removed_notify', {'user': users[target_un], 'by': my_un})
+    notify_user(target_un, 'friend_removed_notify', {'user': users.get(target_un), 'by': my_un})
 
 @socketio.on('message')
 def handle_msg(data):
@@ -235,7 +249,6 @@ def handle_msg(data):
     text = data.get('text', '').strip()
     if not text or len(text) > 1000: return
     
-    # Нормализуем DM комнаты
     if room.startswith('dm_'):
         parts = room.split('_')
         if len(parts) >= 3:
@@ -246,17 +259,20 @@ def handle_msg(data):
     data['timestamp'] = time.time()
     data['text'] = text
     
-    h = load_db('history')
-    h.append(data)
-    if len(h) > 1000: h = h[-1000:]
-    save_db('history', h)
+    db = get_db()
+    db.execute("INSERT INTO messages (room, username, user, avatar, text, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+               (room, data.get('username', ''), data.get('user', ''), data.get('avatar', ''), text, data['timestamp']))
+    # Чистим старые
+    db.execute("DELETE FROM messages WHERE id NOT IN (SELECT id FROM messages ORDER BY id DESC LIMIT 500)")
+    db.commit()
+    db.close()
+    
     emit('message', data, room=room)
 
 @socketio.on('join')
 def on_join(data):
     room = data.get('room', 'Общий')
     
-    # Нормализуем DM комнаты
     if room.startswith('dm_'):
         parts = room.split('_')
         if len(parts) >= 3:
@@ -264,7 +280,10 @@ def on_join(data):
             room = f"dm_{a}_{b}"
     
     join_room(room)
-    hist = [m for m in load_db('history') if m.get('room') == room][-50:]
+    db = get_db()
+    rows = db.execute("SELECT * FROM messages WHERE room = ? ORDER BY id DESC LIMIT 50", (room,)).fetchall()
+    db.close()
+    hist = [dict(r) for r in reversed(rows)]
     emit('history', hist)
 
 @socketio.on('get_rooms')
