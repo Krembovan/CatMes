@@ -447,10 +447,10 @@ if (savedUser && savedPass) {
         }
 
         socket.on('auth_result', function(data) {
-            if (data.success) {
-		localStorage.setItem('skam_user', myData.username);
-		localStorage.setItem('skam_pass', document.getElementById('loginPass').value || savedPass || '');
-                myData = data.user;
+           if (data.success) {
+    myData = data.user;
+    localStorage.setItem('skam_user', myData.username);
+    localStorage.setItem('skam_pass', document.getElementById('loginPass').value || savedPass || '');
                 notifications = myData.notifications || [];
                 document.getElementById('authOverlay').classList.remove('active');
                 document.getElementById('mainApp').style.display = 'flex';
@@ -508,7 +508,7 @@ if (savedUser && savedPass) {
     document.getElementById('messages').innerHTML = '<div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Выберите чат</div></div>';
     closeModal('profileOverlay');
 }
-        }
+        
 
         // ========== УВЕДОМЛЕНИЯ ==========
         function toggleNotifPanel() {
