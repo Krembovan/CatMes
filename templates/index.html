@@ -410,4 +410,224 @@ function saveProfile() {
     var name = document.getElementById('profileName').value.trim();
     var bio = document.getElementById('profileBio').value.trim();
     var av = document.getElementById('profileAvatarUrl').value.trim();
-    if (!name) { showToast
+    if (!name) { showToast('Имя обязательно', 'error'); return; }
+    socket.emit('update_profile', { username: myData.username, display_name: name, bio: bio, avatar: av });
+}
+
+socket.on('profile_updated', function(data) {
+    myData = data.user;
+    updateMyInfo();
+    showToast('Профиль обновлён!', 'success');
+    closeModal('profileOverlay');
+});
+
+function logout() {
+    localStorage.removeItem('skam_user');
+    localStorage.removeItem('skam_pass');
+    myData = null;
+    dmUser = null;
+    document.getElementById('mainApp').style.display = 'none';
+    document.getElementById('authOverlay').classList.add('active');
+    document.getElementById('messages').innerHTML = '<div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Выберите чат</div></div>';
+    closeModal('profileOverlay');
+}
+
+function toggleNotifPanel() {
+    var panel = document.getElementById('notifPanel');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) renderNotifications();
+}
+
+function updateBadge() {
+    var total = (myData && myData.requests ? myData.requests.length : 0) + notifications.filter(function(n){ return !n.read; }).length;
+    var badge = document.getElementById('notifBadge');
+    badge.textContent = total;
+    if (total > 0) { badge.classList.add('show'); }
+    else { badge.classList.remove('show'); }
+}
+
+function renderNotifications() {
+    var list = document.getElementById('notifList');
+    var reqs = (myData && myData.requests || []).map(function(un){
+        return { type: 'friend_request', from: un, text: '@' + un + ' хочет добавить вас в друзья', timestamp: Date.now() / 1000 };
+    });
+    var all = reqs.concat(notifications);
+    
+    if (all.length === 0) {
+        list.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-secondary);">Нет уведомлений</div>';
+        return;
+    }
+    
+    list.innerHTML = all.map(function(n){
+        var btns = '';
+        if (n.type === 'friend_request') {
+            btns = '<div class="notif-actions">' +
+                '<button class="btn-sm primary" onclick="acceptFriend(\'' + n.from + '\');toggleNotifPanel();">✓ Принять</button>' +
+                '<button class="btn-sm danger" onclick="declineFriend(\'' + n.from + '\');toggleNotifPanel();">✕ Отклонить</button>' +
+            '</div>';
+        }
+        return '<div class="notif-item"><div class="notif-text">' + escapeHtml(n.text) + '</div><div class="notif-time">' + new Date(n.timestamp * 1000).toLocaleString() + '</div>' + btns + '</div>';
+    }).join('');
+}
+
+socket.on('new_notification', function(notif) {
+    notifications.unshift(notif);
+    updateBadge();
+    showToast(notif.text, 'info');
+});
+
+function updateFriendList() {
+    if (!myData) return;
+    updateBadge();
+    var list = document.getElementById('friendList');
+    var html = '';
+    
+    (myData.requests || []).forEach(function(un){
+        html += '<div class="friend-item" style="border:1px dashed var(--primary);">' +
+            '<div class="chat-avatar">👤</div><span style="flex:1;">@' + escapeHtml(un) + '</span>' +
+            '<button class="badge-accept" onclick="event.stopPropagation();acceptFriend(\'' + escapeHtml(un) + '\')">✓ Принять</button></div>';
+    });
+    
+    (myData.friends || []).forEach(function(un){
+        html += '<div class="friend-item" onclick="startDM(\'' + escapeHtml(un) + '\')">' +
+            '<div class="chat-avatar">🔵</div><span style="flex:1;">@' + escapeHtml(un) + '</span>' +
+            '<span class="friend-remove-btn" onclick="event.stopPropagation();removeFriend(\'' + escapeHtml(un) + '\')">✕</span></div>';
+    });
+    
+    if (!html) html = '<div style="padding:10px;color:var(--text-secondary);font-size:0.8rem;">Нет друзей</div>';
+    list.innerHTML = html;
+}
+
+function updateRoomList() {
+    var list = document.getElementById('roomList');
+    var html = '<div class="chat-item active" onclick="switchRoom(\'Общий\')" data-room="Общий"><div class="chat-avatar">🌍</div><span>Общий канал</span></div>';
+    list.innerHTML = html;
+}
+
+function openFriendModal() {
+    document.getElementById('searchUser').value = '@';
+    document.getElementById('friendError').textContent = '';
+    openModal('friendOverlay');
+}
+
+function sendFriendReq() {
+    var target = document.getElementById('searchUser').value.trim();
+    if (!target) { document.getElementById('friendError').textContent = 'Введите username'; return; }
+    socket.emit('send_friend_request', { my_username: myData.username, target_username: target });
+    closeModal('friendOverlay');
+}
+
+function acceptFriend(un) { socket.emit('accept_friend', { my_username: myData.username, target_username: un }); }
+function declineFriend(un) { socket.emit('decline_friend', { my_username: myData.username, target_username: un }); }
+function removeFriend(un) {
+    if (!confirm('Удалить @' + un + ' из друзей?')) return;
+    socket.emit('remove_friend', { my_username: myData.username, target_username: un });
+}
+
+socket.on('friend_msg', function(data) { showToast(data.text, data.type || 'info'); });
+
+socket.on('incoming_friend_request', function(data) {
+    if (myData && data.user && data.user.username === myData.username) {
+        myData = data.user;
+        updateFriendList();
+        updateBadge();
+        showToast('@' + data.from + ' хочет добавить вас в друзья', 'info');
+    }
+});
+
+socket.on('friend_accepted_notify', function(data) {
+    if (myData && data.user && data.user.username === myData.username) {
+        myData = data.user;
+        updateFriendList();
+        showToast('@' + data.by + ' принял ваш запрос', 'success');
+    }
+});
+
+socket.on('friend_removed_notify', function(data) {
+    if (myData && data.user && data.user.username === myData.username) {
+        myData = data.user;
+        updateFriendList();
+        showToast('@' + data.by + ' удалил вас из друзей', 'info');
+    }
+});
+
+function startDM(un) {
+    dmUser = un;
+    var a = [myData.username, un].sort();
+    var room = 'dm_' + a[0] + '_' + a[1];
+    switchRoom(room);
+}
+
+function switchRoom(roomId) {
+    currentRoom = roomId;
+    document.getElementById('messages').innerHTML = '';
+    
+    if (roomId === 'Общий') {
+        document.getElementById('chatHeader').textContent = '# Общий канал';
+        dmUser = null;
+    } else if (roomId.startsWith('dm_')) {
+        document.getElementById('chatHeader').textContent = '💬 @' + dmUser;
+    }
+    
+    var items = document.querySelectorAll('.chat-item');
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].getAttribute('data-room') === roomId) { items[i].classList.add('active'); }
+        else { items[i].classList.remove('active'); }
+    }
+    socket.emit('join', { room: roomId });
+}
+
+function sendMsg() {
+    var input = document.getElementById('msgInput');
+    var text = input.value.trim();
+    if (!text || !myData) return;
+    socket.emit('message', {
+        room: currentRoom, text: text,
+        user: myData.display_name, username: myData.username, avatar: myData.avatar
+    });
+    input.value = '';
+}
+
+function renderMessage(msg) {
+    var box = document.getElementById('messages');
+    if (box.querySelector('.empty-chat')) box.innerHTML = '';
+    
+    var isMy = msg.username === (myData ? myData.username : '');
+    var div = document.createElement('div');
+    div.className = 'msg' + (isMy ? ' my' : '');
+    
+    var avatarHtml = '<img class="msg-avatar" src="' + escapeHtml(msg.avatar || '') + '" onerror="this.style.display=\'none\'">';
+    var authorHtml = isMy ? '' : '<div class="msg-author">' + escapeHtml(msg.user) + '</div>';
+    
+    div.innerHTML = avatarHtml + '<div class="msg-bubble">' + authorHtml + escapeHtml(msg.text) + '</div>';
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+}
+
+socket.on('message', function(msg) {
+    // Приводим комнаты к единому формату
+    var msgRoom = msg.room;
+    var myRoom = currentRoom;
+    if (msgRoom.startsWith('dm_') && myRoom.startsWith('dm_')) {
+        var mp = msgRoom.split('_').sort();
+        var rp = myRoom.split('_').sort();
+        msgRoom = mp.join('_');
+        myRoom = rp.join('_');
+    }
+    if (msgRoom === myRoom) renderMessage(msg);
+});
+
+socket.on('history', function(hist) {
+    document.getElementById('messages').innerHTML = '';
+    if (!hist || hist.length === 0) {
+        document.getElementById('messages').innerHTML = '<div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Нет сообщений</div></div>';
+    } else {
+        for (var i = 0; i < hist.length; i++) { renderMessage(hist[i]); }
+    }
+});
+
+document.getElementById('loginPass').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleLogin(); });
+document.getElementById('regPass2').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleRegister(); });
+</script>
+</body>
+</html>
