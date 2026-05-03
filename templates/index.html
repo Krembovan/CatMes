@@ -610,6 +610,26 @@ function openFriendModal() {
             showToast(data.text, data.type || 'info');
         });
 
+// Мгновенное обновление при входящем запросе
+socket.on('incoming_friend_request', function(data) {
+    if (myData && data.user && data.user.username === myData.username) {
+        myData = data.user;
+        updateFriendList();
+        updateBadge();
+        showToast('@' + data.from + ' хочет добавить вас в друзья', 'info');
+    }
+});
+
+// Мгновенное обновление когда твой запрос приняли
+socket.on('friend_accepted_notify', function(data) {
+    if (myData && data.user && data.user.username === myData.username) {
+        myData = data.user;
+        updateFriendList();
+        socket.emit('get_rooms');
+        showToast('@' + data.by + ' принял ваш запрос', 'success');
+    }
+});
+
         // ========== КОМНАТЫ ==========
         socket.on('room_list', function(rooms) {
             var list = document.getElementById('roomList');
