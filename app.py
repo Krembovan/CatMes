@@ -17,6 +17,8 @@ DB_FILES = {
     'registry': os.path.join(BASE_DIR, 'chats_registry.json')
 }
 
+user_sessions = {}
+
 def load_db(key):
     path = DB_FILES[key]
     if not os.path.exists(path):
@@ -30,8 +32,12 @@ def load_db(key):
         return [] if key == 'history' else {}
 
 def save_db(key, data):
-    with open(DB_FILES[key], 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    path = DB_FILES[key]
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving {key}: {e}", flush=True)
 
 def notify_user(username, event, data):
     """Отправить событие пользователю если он онлайн"""
