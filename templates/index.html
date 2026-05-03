@@ -605,15 +605,25 @@ function renderMessage(msg) {
 }
 
 socket.on('message', function(msg) {
-    // Приводим комнаты к единому формату
-    var msgRoom = msg.room;
-    var myRoom = currentRoom;
-    if (msgRoom.startsWith('dm_') && myRoom.startsWith('dm_')) {
-        var mp = msgRoom.split('_').sort();
-        var rp = myRoom.split('_').sort();
-        msgRoom = mp.join('_');
-        myRoom = rp.join('_');
+    var msgRoom = msg.room || '';
+    var myRoom = currentRoom || '';
+    
+    // Нормализуем обе комнаты для сравнения
+    if (msgRoom.startsWith('dm_')) {
+        var parts = msgRoom.split('_');
+        if (parts.length >= 3) {
+            var sorted = [parts[1], parts[2]].sort();
+            msgRoom = 'dm_' + sorted[0] + '_' + sorted[1];
+        }
     }
+    if (myRoom.startsWith('dm_')) {
+        var parts = myRoom.split('_');
+        if (parts.length >= 3) {
+            var sorted = [parts[1], parts[2]].sort();
+            myRoom = 'dm_' + sorted[0] + '_' + sorted[1];
+        }
+    }
+    
     if (msgRoom === myRoom) renderMessage(msg);
 });
 

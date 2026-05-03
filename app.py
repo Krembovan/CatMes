@@ -235,11 +235,12 @@ def handle_msg(data):
     text = data.get('text', '').strip()
     if not text or len(text) > 1000: return
     
-    # Приватные чаты: room = "dm_user1_user2"
+    # Нормализуем DM комнаты
     if room.startswith('dm_'):
         parts = room.split('_')
-        a, b = sorted([parts[1], parts[2]])
-        room = f"dm_{a}_{b}"
+        if len(parts) >= 3:
+            a, b = sorted([parts[1], parts[2]])
+            room = f"dm_{a}_{b}"
     
     data['room'] = room
     data['timestamp'] = time.time()
@@ -254,10 +255,13 @@ def handle_msg(data):
 @socketio.on('join')
 def on_join(data):
     room = data.get('room', 'Общий')
-    if room.startswith('dm_') and myData:
+    
+    # Нормализуем DM комнаты
+    if room.startswith('dm_'):
         parts = room.split('_')
-        a, b = sorted([parts[1], parts[2]])
-        room = f"dm_{a}_{b}"
+        if len(parts) >= 3:
+            a, b = sorted([parts[1], parts[2]])
+            room = f"dm_{a}_{b}"
     
     join_room(room)
     hist = [m for m in load_db('history') if m.get('room') == room][-50:]
