@@ -292,12 +292,13 @@
             <div id="friendList"></div>
         </div>
         <div class="profile-mini" onclick="openModal('profileOverlay');loadProfile();">
-            <img id="myAvatar" class="avatar-mini" src="" alt="Аватар">
-            <div class="profile-info">
-                <div class="profile-name" id="myName">—</div>
-                <div class="profile-username" id="myUsername">@—</div>
-            </div>
-        </div>
+    <img id="myAvatar" class="avatar-mini" src="" alt="Аватар">
+    <div class="profile-info">
+        <div class="profile-name" id="myName">—</div>
+        <div class="profile-username" id="myUsername">@—</div>
+        <div id="myRole" style="font-size:0.7rem; color: #f59e0b; margin-top: 2px;"></div>
+    </div>
+</div>
     </div>
     <div class="chat-area">
         <div class="chat-header" id="chatHeader"># Общий канал</div>
@@ -395,6 +396,11 @@ function updateMyInfo() {
     document.getElementById('myName').textContent = myData.display_name;
     document.getElementById('myUsername').textContent = '@' + myData.username;
     document.getElementById('myAvatar').src = myData.avatar;
+    
+    // Отображение роли
+    var roleEl = document.getElementById('myRole');
+    var roleNames = {'owner': '👑 Владелец', 'admin': '🛡️ Админ', 'moderator': '🛡️ Модер', 'user': 'Пользователь'};
+    if (roleEl) roleEl.textContent = roleNames[myData.role] || '';
 }
 
 function loadProfile() {
