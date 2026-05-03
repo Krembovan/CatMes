@@ -2,35 +2,37 @@ import eventlet
 eventlet.monkey_patch()
 
 import json, os, time
-from flask import Flask, render_template, request
+from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-BASE_DIR = os.environ.get('RENDER_DISK_PATH', os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB = {}
 DB_FILES = {
     'history': os.path.join(BASE_DIR, 'history.json'),
     'users': os.path.join(BASE_DIR, 'users.json'),
     'registry': os.path.join(BASE_DIR, 'chats_registry.json')
 }
-
 user_sessions = {}
 
 def load_db(key):
     path = DB_FILES[key]
-    if not os.path.exists(path):
-        default = [] if key == 'history' else {}
-        save_db(key, default)
-        return default
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
-        return [] if key == 'history' else {}
+    if key not in DB:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    DB[key] = json.load(f)
+            except:
+                DB[key] = [] if key == 'history' else {}
+        else:
+            DB[key] = [] if key == 'history' else {}
+    return DB[key]
 
 def save_db(key, data):
+    DB[key] = data
     path = DB_FILES[key]
     try:
         with open(path, 'w', encoding='utf-8') as f:
@@ -41,10 +43,14 @@ def save_db(key, data):
 def notify_user(username, event, data):
     sid = user_sessions.get(username)
     if sid:
-        socketio.emit(event, data, room=sid)
+        try:
+            socketio.emit(event, data, room=sid)
+        except:
+            pass
 
 @app.route('/')
 def index():
+    from flask import render_template
     return render_template('index.html')
 
 @socketio.on('auth')
@@ -100,10 +106,11 @@ def handle_profile_update(data):
     un = data.get('username', '').lower()
     users = load_db('users')
     if un not in users: return
-    if 'display_name' in data and data['display_name'].strip():
+    if data.get('display_name', '').strip():
         users[un]['display_name'] = data['display_name'].strip()
-    if 'bio' in data: users[un]['bio'] = data['bio'].strip()
-    if 'avatar' in data and data['avatar'].strip():
+    if 'bio' in data:
+        users[un]['bio'] = data['bio'].strip()
+    if data.get('avatar', '').strip():
         users[un]['avatar'] = data['avatar'].strip()
     save_db('users', users)
     emit('profile_updated', {'user': users[un]})
@@ -141,7 +148,7 @@ def handle_friend_request(data):
         'id': str(int(time.time() * 1000)),
         'type': 'friend_request',
         'from': my_un,
-        'from_name': users[my_un]['display_name'],
+        'from_name': users[my_un].get('display_name', my_un),
         'text': f'@{my_un} хочет добавить вас в друзья',
         'timestamp': time.time(),
         'read': False
@@ -149,7 +156,6 @@ def handle_friend_request(data):
     target.setdefault('notifications', []).insert(0, notif)
     
     save_db('users', users)
-    
     emit('friend_msg', {'text': f'Запрос отправлен @{target_un}', 'type': 'success'})
     notify_user(target_un, 'incoming_friend_request', {'user': target, 'from': my_un})
 
@@ -159,23 +165,19 @@ def handle_accept(data):
     target_un = data.get('target_username', '').strip().lower()
     
     users = load_db('users')
-    
-    if my_un not in users:
-        return
+    if my_un not in users: return
     
     user = users[my_un]
     
+    # Ищем запрос
     found = None
     for req in user.get('requests', []):
         if req.lower() == target_un:
             found = req
             break
-    
-    if not found:
-        return
+    if not found: return
     
     user['requests'].remove(found)
-    
     if target_un not in user.get('friends', []):
         user.setdefault('friends', []).append(target_un)
     
@@ -183,24 +185,11 @@ def handle_accept(data):
         if my_un not in users[target_un].get('friends', []):
             users[target_un].setdefault('friends', []).append(my_un)
     
-    reg = load_db('registry')
-    a, b = sorted([my_un, target_un])
-    chat_id = f"priv_{a}_{b}"
-    if chat_id not in reg:
-        reg[chat_id] = {
-            "name": "Приватный чат",
-            "type": "private",
-            "users": [my_un, target_un]
-        }
-        save_db('registry', reg)
-    
     user.setdefault('notifications', [])
     user['notifications'] = [n for n in user['notifications'] if not (n.get('type') == 'friend_request' and n.get('from', '').lower() == target_un)]
     
     save_db('users', users)
-    
     emit('auth_result', {'success': True, 'user': users[my_un]})
-    emit('room_list', reg, broadcast=True)
     notify_user(target_un, 'friend_accepted_notify', {'user': users[target_un], 'by': my_un})
 
 @socketio.on('decline_friend')
@@ -208,24 +197,19 @@ def handle_decline(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
     users = load_db('users')
-    
-    if my_un not in users:
-        return
+    if my_un not in users: return
     
     user = users[my_un]
-    
     found = None
     for req in user.get('requests', []):
         if req.lower() == target_un:
             found = req
             break
-    
     if found:
         user['requests'].remove(found)
     
     user.setdefault('notifications', [])
     user['notifications'] = [n for n in user['notifications'] if not (n.get('type') == 'friend_request' and n.get('from', '').lower() == target_un)]
-    
     save_db('users', users)
     emit('auth_result', {'success': True, 'user': users[my_un]})
 
@@ -234,65 +218,33 @@ def handle_remove_friend(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
     users = load_db('users')
+    if my_un not in users: return
     
-    if my_un not in users:
-        return
-    
-    user = users[my_un]
-    
-    if target_un in user.get('friends', []):
-        user['friends'].remove(target_un)
-    
-    if target_un in users:
-        if my_un in users[target_un].get('friends', []):
-            users[target_un]['friends'].remove(my_un)
-    
-    reg = load_db('registry')
-    a, b = sorted([my_un, target_un])
-    chat_id = f"priv_{a}_{b}"
-    if chat_id in reg:
-        del reg[chat_id]
-        save_db('registry', reg)
-        hist = load_db('history')
-        hist = [m for m in hist if m.get('room') != chat_id]
-        save_db('history', hist)
+    if target_un in users[my_un].get('friends', []):
+        users[my_un]['friends'].remove(target_un)
+    if target_un in users and my_un in users[target_un].get('friends', []):
+        users[target_un]['friends'].remove(my_un)
     
     save_db('users', users)
     emit('auth_result', {'success': True, 'user': users[my_un]})
-    emit('room_list', load_db('registry'), broadcast=True)
     notify_user(target_un, 'friend_removed_notify', {'user': users[target_un], 'by': my_un})
-
-@socketio.on('delete_chat')
-def handle_delete_chat(data):
-    chat_id = data.get('chat_id', '')
-    if not chat_id or not chat_id.startswith('priv_'): return
-    reg = load_db('registry')
-    if chat_id in reg:
-        del reg[chat_id]
-        save_db('registry', reg)
-        hist = load_db('history')
-        hist = [m for m in hist if m.get('room') != chat_id]
-        save_db('history', hist)
-        emit('chat_deleted', {'success': True, 'chat_id': chat_id}, broadcast=True)
-        emit('room_list', reg, broadcast=True)
-
-@socketio.on('delete_chat_local')
-def handle_delete_chat_local(data):
-    chat_id = data.get('chat_id', '')
-    username = data.get('username', '').lower()
-    if not chat_id or not chat_id.startswith('priv_'): return
-    hist = load_db('history')
-    hist = [m for m in hist if not (m.get('room') == chat_id and m.get('username') == username)]
-    save_db('history', hist)
-    emit('chat_deleted', {'success': True, 'chat_id': chat_id})
 
 @socketio.on('message')
 def handle_msg(data):
     room = data.get('room', 'Общий')
     text = data.get('text', '').strip()
     if not text or len(text) > 1000: return
+    
+    # Приватные чаты: room = "dm_user1_user2"
+    if room.startswith('dm_'):
+        parts = room.split('_')
+        a, b = sorted([parts[1], parts[2]])
+        room = f"dm_{a}_{b}"
+    
+    data['room'] = room
     data['timestamp'] = time.time()
     data['text'] = text
+    
     h = load_db('history')
     h.append(data)
     if len(h) > 1000: h = h[-1000:]
@@ -302,17 +254,18 @@ def handle_msg(data):
 @socketio.on('join')
 def on_join(data):
     room = data.get('room', 'Общий')
+    if room.startswith('dm_') and myData:
+        parts = room.split('_')
+        a, b = sorted([parts[1], parts[2]])
+        room = f"dm_{a}_{b}"
+    
     join_room(room)
     hist = [m for m in load_db('history') if m.get('room') == room][-50:]
     emit('history', hist)
 
 @socketio.on('get_rooms')
 def get_rooms():
-    reg = load_db('registry')
-    if 'Общий' not in reg:
-        reg['Общий'] = {"name": "Общий канал", "type": "public", "users": []}
-        save_db('registry', reg)
-    emit('room_list', reg)
+    emit('room_list', {'Общий': {"name": "Общий канал", "type": "public"}})
 
 @socketio.on('disconnect')
 def handle_disconnect():
