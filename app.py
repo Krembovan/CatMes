@@ -98,31 +98,40 @@ def handle_profile_update(data):
     emit('profile_updated', {'user': users[un]})
 
 # ============== ДРУЗЬЯ ==============
+# ============== ДРУЗЬЯ ==============
 @socketio.on('send_friend_request')
 def handle_friend_request(data):
-    my_un = data.get('my_username', '').lower()
-    target_un = data.get('target_username', '').lower().replace('@', '').strip()
-    users = load_db('users')
+    my_un = data.get('my_username', '').strip().lower()
+    target_un = data.get('target_username', '').strip().lower().replace('@', '')
+    
+    print(f"🔍 Friend request: {my_un} -> {target_un}", flush=True)
     
     if not target_un:
-        emit('friend_msg', {'text': 'Введите имя', 'type': 'error'}, room=request.sid)
+        emit('friend_msg', {'text': 'Введите имя', 'type': 'error'})
         return
+    
+    users = load_db('users')
+    
     if target_un not in users:
-        emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'}, room=request.sid)
+        emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'})
         return
     if target_un == my_un:
-        emit('friend_msg', {'text': 'Нельзя добавить себя', 'type': 'error'}, room=request.sid)
+        emit('friend_msg', {'text': 'Нельзя добавить себя', 'type': 'error'})
         return
     
-    user = users[target_un]
-    if my_un in user.get('friends', []):
-        emit('friend_msg', {'text': 'Вы уже друзья', 'type': 'info'}, room=request.sid)
+    target = users[target_un]
+    
+    if my_un in target.get('friends', []):
+        emit('friend_msg', {'text': 'Вы уже друзья', 'type': 'info'})
         return
-    if my_un in user.get('requests', []):
-        emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'}, room=request.sid)
+    if my_un in target.get('requests', []):
+        emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'})
         return
     
-    user.setdefault('requests', []).append(my_un)
+    # Добавляем запрос
+    target.setdefault('requests', []).append(my_un)
+    
+    # Уведомление
     notif = {
         'id': str(int(time.time() * 1000)),
         'type': 'friend_request',
@@ -132,44 +141,56 @@ def handle_friend_request(data):
         'timestamp': time.time(),
         'read': False
     }
-    user.setdefault('notifications', []).insert(0, notif)
+    target.setdefault('notifications', []).insert(0, notif)
+    
     save_db('users', users)
-    emit('friend_msg', {'text': f'Запрос отправлен @{target_un}', 'type': 'success'}, room=request.sid)
+    
+    emit('friend_msg', {'text': f'Запрос отправлен @{target_un}', 'type': 'success'})
+    print(f"✅ Request saved. {target_un}'s requests: {target.get('requests')}", flush=True)
 
 @socketio.on('accept_friend')
 def handle_accept(data):
-    my_un = data.get('my_username', '').lower()
-    target_un = data.get('target_username', '').lower()
+    my_un = data.get('my_username', '').strip().lower()
+    target_un = data.get('target_username', '').strip().lower()
+    
+    print(f"✅ Accept friend: {my_un} accepts {target_un}", flush=True)
+    
     users = load_db('users')
     
     if my_un not in users:
+        print(f"❌ {my_un} not found", flush=True)
         return
     
     user = users[my_un]
+    print(f"📋 {my_un}'s requests before: {user.get('requests', [])}", flush=True)
     
-    # Ищем запрос от target_un
-    if target_un not in user.get('requests', []):
-        # Может уже принят? Проверяем друзей
-        if target_un in user.get('friends', []):
-            emit('auth_result', {'success': True, 'user': user})
-            return
+    # Ищем запрос (может быть в разных регистрах)
+    found = None
+    for req in user.get('requests', []):
+        if req.lower() == target_un:
+            found = req
+            break
+    
+    if not found:
+        print(f"❌ {target_un} not in requests", flush=True)
         return
     
     # Удаляем запрос
-    user['requests'].remove(target_un)
+    user['requests'].remove(found)
     
     # Добавляем в друзья
     if target_un not in user.get('friends', []):
         user.setdefault('friends', []).append(target_un)
     
-    # Взаимность
+    # Взаимно
     if target_un in users:
         if my_un not in users[target_un].get('friends', []):
             users[target_un].setdefault('friends', []).append(my_un)
     
-    # Создаём приватный чат
+    # Приватный чат
     reg = load_db('registry')
-    chat_id = f"priv_{min(my_un, target_un)}_{max(my_un, target_un)}"
+    a, b = sorted([my_un, target_un])
+    chat_id = f"priv_{a}_{b}"
     if chat_id not in reg:
         reg[chat_id] = {
             "name": f"Чат @{target_un}",
@@ -178,23 +199,41 @@ def handle_accept(data):
         }
         save_db('registry', reg)
     
-    save_db('users', users)
+    # Чистим уведомления
+    user.setdefault('notifications', [])
+    user['notifications'] = [n for n in user['notifications'] if not (n.get('type') == 'friend_request' and n.get('from', '').lower() == target_un)]
     
-    # Отправляем обновлённые данные
+    save_db('users', users)
+    print(f"✅ Friends saved. {my_un}'s friends: {users[my_un].get('friends', [])}", flush=True)
+    
     emit('auth_result', {'success': True, 'user': users[my_un]})
     emit('room_list', reg, broadcast=True)
 
 @socketio.on('decline_friend')
 def handle_decline(data):
-    my_un = data.get('my_username', '').lower()
-    target_un = data.get('target_username', '').lower()
+    my_un = data.get('my_username', '').strip().lower()
+    target_un = data.get('target_username', '').strip().lower()
     users = load_db('users')
-    if my_un not in users: return
+    
+    if my_un not in users:
+        return
+    
     user = users[my_un]
-    if target_un in user.get('requests', []):
-        user['requests'].remove(target_un)
+    
+    # Удаляем запрос
+    found = None
+    for req in user.get('requests', []):
+        if req.lower() == target_un:
+            found = req
+            break
+    
+    if found:
+        user['requests'].remove(found)
+    
+    # Чистим уведомления
     user.setdefault('notifications', [])
-    user['notifications'] = [n for n in user['notifications'] if not (n['type'] == 'friend_request' and n['from'] == target_un)]
+    user['notifications'] = [n for n in user['notifications'] if not (n.get('type') == 'friend_request' and n.get('from', '').lower() == target_un)]
+    
     save_db('users', users)
     emit('auth_result', {'success': True, 'user': users[my_un]})
 
