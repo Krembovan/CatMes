@@ -2,7 +2,7 @@ import eventlet
 eventlet.monkey_patch()
 
 import json, os, time
-import psycopg2
+from psycopg2.pool import ThreadedConnectionPool
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room
@@ -14,14 +14,18 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 DATABASE_URL = 'postgresql://postgres:krembovan@18@db.tnyfccjvqysytgnhwvwp.supabase.co:5432/postgres'
 user_sessions = {}
 
+pool = ThreadedConnectionPool(1, 10, DATABASE_URL)
+
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = True
-    return conn
+    return pool.getconn()
+
+def return_db(conn):
+    pool.putconn(conn)
 
 def init_db():
-    db = get_db()
-    cur = db.cursor()
+    conn = get_db()
+    conn.autocommit = True
+    cur = conn.cursor()
     cur.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -38,47 +42,47 @@ def init_db():
         );
     ''')
     cur.close()
-    db.close()
+    return_db(conn)
 
 init_db()
 
 def load_users():
-    db = get_db()
-    cur = db.cursor(cursor_factory=RealDictCursor)
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT username, data FROM users")
     rows = cur.fetchall()
     cur.close()
-    db.close()
+    return_db(conn)
     return {row['username']: row['data'] for row in rows}
 
 def save_user(username, data):
-    db = get_db()
-    cur = db.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute(
         "INSERT INTO users (username, data) VALUES (%s, %s) ON CONFLICT (username) DO UPDATE SET data = %s",
         (username, json.dumps(data, ensure_ascii=False), json.dumps(data, ensure_ascii=False))
     )
     cur.close()
-    db.close()
+    return_db(conn)
 
 def load_messages():
-    db = get_db()
-    cur = db.cursor(cursor_factory=RealDictCursor)
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM messages ORDER BY id DESC LIMIT 500")
     rows = cur.fetchall()
     cur.close()
-    db.close()
+    return_db(conn)
     return [dict(r) for r in reversed(rows)]
 
 def save_message(msg):
-    db = get_db()
-    cur = db.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute(
         "INSERT INTO messages (room, username, \"user\", avatar, text, timestamp) VALUES (%s, %s, %s, %s, %s, %s)",
         (msg.get('room', 'Общий'), msg.get('username', ''), msg.get('user', ''), msg.get('avatar', ''), msg.get('text', ''), msg.get('timestamp', time.time()))
     )
     cur.close()
-    db.close()
+    return_db(conn)
 
 def notify_user(username, event, data):
     sid = user_sessions.get(username)
@@ -214,11 +218,11 @@ def admin_delete_user(username):
     if get_role(admin_un) not in ['owner', 'admin']: return json.dumps({'message':'Нет прав'}),403
     un = username.lower()
     if get_role(un) == 'owner': return json.dumps({'message':'Нельзя удалить владельца'}),403
-    db = get_db()
-    cur = db.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute("DELETE FROM users WHERE username = %s", (un,))
     cur.close()
-    db.close()
+    return_db(conn)
     return json.dumps({'message':f'Пользователь @{un} удалён'})
 
 @app.route('/admin/setrole/<username>/<role>', methods=['POST'])
@@ -242,11 +246,11 @@ def admin_delete_msg(timestamp):
     auth = request.authorization
     if not auth: return json.dumps({'message':'Доступ запрещён'}),401
     if get_role(auth.username.lower()) not in ['owner', 'admin', 'moderator']: return json.dumps({'message':'Нет прав'}),403
-    db = get_db()
-    cur = db.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute("DELETE FROM messages WHERE timestamp = %s", (float(timestamp),))
     cur.close()
-    db.close()
+    return_db(conn)
     return json.dumps({'message':'Сообщение удалено'})
 
 @socketio.on('auth')
@@ -387,11 +391,11 @@ def handle_delete_message(data):
     username = data.get('username', '').lower()
     if get_role(username) not in ['owner', 'admin', 'moderator']:
         emit('error_msg', {'text': 'Нет прав'}); return
-    db = get_db()
-    cur = db.cursor()
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute("DELETE FROM messages WHERE timestamp = %s", (float(msg_ts),))
     cur.close()
-    db.close()
+    return_db(conn)
     emit('message_deleted', {'msg_id': msg_ts}, broadcast=True)
 
 @socketio.on('message')
