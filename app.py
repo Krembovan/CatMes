@@ -53,8 +53,6 @@ def index():
     from flask import render_template
     return render_template('index.html')
 
-ADMIN_USERNAME = 'admin'
-ADMIN_PASSWORD = 'krembovan@181818'
 
 ROLES = {'krembovan': 'owner'}
 
@@ -70,25 +68,44 @@ def get_role(username):
 
 @app.route('/admin')
 def admin_panel():
+    # Проверяем авторизацию
     auth = request.authorization
-    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+    if not auth:
         return ('Доступ запрещён', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
     
+    username = auth.username.lower()
+    password = auth.password
+    
     users = load_users()
+    
+    # Проверяем что пользователь существует и пароль верен
+    if username not in users or users[username].get('pass') != password:
+        return ('Неверный логин или пароль', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+    
+    role = get_role(username)
+    
+    # Проверяем права
+    if role not in ['owner', 'admin', 'moderator']:
+        return ('Доступ запрещён', 403)
+    
     msgs = load_messages()
     msg_count = len(msgs)
     last_msgs = msgs[-10:] if msgs else []
     last_msgs.reverse()
     
     users_list = []
-    for username, d in users.items():
+    for uname, d in users.items():
         users_list.append({
-            'username': username,
+            'username': uname,
             'display_name': d.get('display_name', ''),
             'role': d.get('role', 'user'),
             'friends': len(d.get('friends', [])),
             'requests': len(d.get('requests', []))
         })
+    
+    # Модератор не может удалять пользователей
+    can_delete = role in ['owner', 'admin']
+    can_change_role = role in ['owner', 'admin']
     
     html = '''<!DOCTYPE html>
 <html lang="ru">
@@ -118,31 +135,44 @@ def admin_panel():
         .section h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 10px; }
         .msg-item { background: #161b22; padding: 10px 16px; border-radius: 8px; margin: 5px 0; font-size: 0.85rem; }
         select { background: #161b22; color: white; border: 1px solid rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 6px; }
+        .user-info { color: #f59e0b; margin-bottom: 20px; }
     </style>
 </head>
 <body>
     <h1>⚡ SKAM Admin Panel</h1>
+    <div class="user-info">Вы вошли как: @''' + username + ''' (''' + {'owner':'Владелец','admin':'Админ','moderator':'Модер'}.get(role,'') + ''')</div>
     <div class="stats">
         <div class="stat-card"><div class="stat-value">''' + str(len(users_list)) + '''</div><div class="stat-label">Пользователей</div></div>
         <div class="stat-card"><div class="stat-value">''' + str(msg_count) + '''</div><div class="stat-label">Сообщений</div></div>
     </div>
     <div class="section"><h2>👥 Пользователи</h2><table>
-        <tr><th>Username</th><th>Имя</th><th>Роль</th><th>Друзья</th><th>Запросы</th><th>Действия</th></tr>'''
+        <tr><th>Username</th><th>Имя</th><th>Роль</th><th>Друзья</th><th>Запросы</th>'''
+    
+    if can_delete:
+        html += '<th>Действия</th>'
+    
+    html += '</tr>'
     
     for u in users_list:
         bc = 'badge-' + ('owner' if u['role'] == 'owner' else 'admin' if u['role'] == 'admin' else 'mod' if u['role'] == 'moderator' else 'user')
         rn = {'owner': 'Владелец', 'admin': 'Админ', 'moderator': 'Модер', 'user': 'Пользователь'}.get(u['role'], u['role'])
-        html += f'''<tr><td>@{u['username']}</td><td>{u['display_name']}</td><td><span class="badge {bc}">{rn}</span></td><td>{u['friends']}</td><td>{u['requests']}</td>
-            <td><select onchange="setRole('{u['username']}',this.value)"><option value="user" {"selected" if u['role']=='user' else ""}>Пользователь</option>
-            <option value="moderator" {"selected" if u['role']=='moderator' else ""}>Модератор</option>
-            <option value="admin" {"selected" if u['role']=='admin' else ""}>Админ</option></select>
-            <button class="btn btn-danger" onclick="deleteUser('{u['username']}')">Удалить</button></td></tr>'''
+        html += f'''<tr><td>@{u['username']}</td><td>{u['display_name']}</td><td><span class="badge {bc}">{rn}</span></td><td>{u['friends']}</td><td>{u['requests']}</td>'''
+        
+        if can_delete and u['role'] != 'owner':
+            html += f'''<td>
+                <select onchange="setRole('{u['username']}',this.value)"><option value="user" {"selected" if u['role']=='user' else ""}>Пользователь</option>
+                <option value="moderator" {"selected" if u['role']=='moderator' else ""}>Модератор</option>
+                <option value="admin" {"selected" if u['role']=='admin' else ""}>Админ</option></select>
+                <button class="btn btn-danger" onclick="deleteUser('{u['username']}')">Удалить</button></td>'''
+        elif u['role'] == 'owner':
+            html += '<td><span style="color:#f59e0b;">Владелец</span></td>'
+        
+        html += '</tr>'
     
-    html += '''</table></div><div class="section"><h2>📝 Последние сообщения (модерация)</h2>'''
+    html += '''</table></div><div class="section"><h2>📝 Сообщения (модерация)</h2>'''
     
     for m in last_msgs:
         html += f'''<div class="msg-item"><b>@{m.get("username","")}</b>: {m.get("text","")[:100]}
-            <span style="color:#94a3b8;font-size:0.7rem;">({m.get("room","")})</span>
             <button class="btn btn-sm" onclick="deleteMsg('{m.get('timestamp','')}')" style="float:right;">✕</button></div>'''
     
     html += '''</div><script>
@@ -155,9 +185,19 @@ def admin_panel():
 @app.route('/admin/delete/<username>', methods=['POST'])
 def admin_delete_user(username):
     auth = request.authorization
-    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+    if not auth:
         return json.dumps({'message':'Доступ запрещён'}),401
+    
+    admin_un = auth.username.lower()
+    role = get_role(admin_un)
+    
+    if role not in ['owner', 'admin']:
+        return json.dumps({'message':'Нет прав'}),403
+    
     un = username.lower()
+    if get_role(un) == 'owner':
+        return json.dumps({'message':'Нельзя удалить владельца'}),403
+    
     users = load_users()
     if un in users:
         del users[un]
@@ -167,13 +207,22 @@ def admin_delete_user(username):
 @app.route('/admin/setrole/<username>/<role>', methods=['POST'])
 def admin_set_role(username, role):
     auth = request.authorization
-    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+    if not auth:
         return json.dumps({'message':'Доступ запрещён'}),401
+    
+    admin_un = auth.username.lower()
+    admin_role = get_role(admin_un)
+    
+    if admin_role not in ['owner', 'admin']:
+        return json.dumps({'message':'Нет прав'}),403
+    
     if role not in ['user','moderator','admin']:
         return json.dumps({'message':'Неверная роль'}),400
+    
     un = username.lower()
     if get_role(un) == 'owner':
         return json.dumps({'message':'Нельзя изменить роль владельца'}),403
+    
     ROLES[un] = role
     users = load_users()
     if un in users:
@@ -184,8 +233,15 @@ def admin_set_role(username, role):
 @app.route('/admin/deletemsg/<timestamp>', methods=['POST'])
 def admin_delete_msg(timestamp):
     auth = request.authorization
-    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+    if not auth:
         return json.dumps({'message':'Доступ запрещён'}),401
+    
+    admin_un = auth.username.lower()
+    role = get_role(admin_un)
+    
+    if role not in ['owner', 'admin', 'moderator']:
+        return json.dumps({'message':'Нет прав'}),403
+    
     msgs = load_messages()
     msgs = [m for m in msgs if str(m.get('timestamp')) != timestamp]
     save_db('messages', msgs)
