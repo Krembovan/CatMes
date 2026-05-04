@@ -216,7 +216,8 @@ def admin_delete_msg(timestamp):
 @socketio.on('auth')
 def handle_auth(data):
     action = data.get('action', 'login')
-    un = data.get('username', '').strip().lower()
+    # Убираем @ из username
+    un = data.get('username', '').strip().lower().replace('@', '')
     dn = data.get('display_name', '').strip()
     pwd = data.get('password', '')
     pwd2 = data.get('password2', '')
@@ -391,7 +392,7 @@ def get_rooms():
 
 @socketio.on('get_user_profile')
 def handle_get_user_profile(data):
-    target_un = data.get('username', '').strip().lower()
+    target_un = data.get('username', '').strip().lower().replace('@', '')
     users = load_users()
     if target_un not in users:
         emit('user_profile', {'error': 'Пользователь не найден'})
