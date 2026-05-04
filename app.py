@@ -9,18 +9,25 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
+DATA_DIR = '/tmp/skam_data'
+os.makedirs(DATA_DIR, exist_ok=True)
+
 user_sessions = {}
 
-# Загружаем из переменной окружения или создаём новую
 def load_db(key):
-    try:
-        data = json.loads(os.environ.get(f'SKAM_{key}', '{}' if key != 'messages' else '[]'))
-        return data
-    except:
-        return [] if key == 'messages' else {}
+    path = os.path.join(DATA_DIR, f'{key}.json')
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return [] if key == 'messages' else {}
 
 def save_db(key, data):
-    os.environ[f'SKAM_{key}'] = json.dumps(data, ensure_ascii=False)
+    path = os.path.join(DATA_DIR, f'{key}.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def load_users():
     return load_db('users')
