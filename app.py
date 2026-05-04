@@ -2,6 +2,8 @@ import eventlet
 eventlet.monkey_patch()
 
 import json, os, time
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room
 
@@ -9,43 +11,74 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-DATA_DIR = '/tmp/skam_data'
-os.makedirs(DATA_DIR, exist_ok=True)
-
+DATABASE_URL = 'postgresql://postgres:krembovan@18@db.tnyfccjvqysytgnhwvwp.supabase.co:5432/postgres'
 user_sessions = {}
 
-def load_db(key):
-    path = os.path.join(DATA_DIR, f'{key}.json')
-    if os.path.exists(path):
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            pass
-    return [] if key == 'messages' else {}
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    return conn
 
-def save_db(key, data):
-    path = os.path.join(DATA_DIR, f'{key}.json')
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def init_db():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            data JSONB
+        );
+        CREATE TABLE IF NOT EXISTS messages (
+            id SERIAL PRIMARY KEY,
+            room TEXT,
+            username TEXT,
+            "user" TEXT,
+            avatar TEXT,
+            text TEXT,
+            timestamp DOUBLE PRECISION
+        );
+    ''')
+    cur.close()
+    db.close()
+
+init_db()
 
 def load_users():
-    return load_db('users')
+    db = get_db()
+    cur = db.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT username, data FROM users")
+    rows = cur.fetchall()
+    cur.close()
+    db.close()
+    return {row['username']: row['data'] for row in rows}
 
 def save_user(username, data):
-    users = load_db('users')
-    users[username] = data
-    save_db('users', users)
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "INSERT INTO users (username, data) VALUES (%s, %s) ON CONFLICT (username) DO UPDATE SET data = %s",
+        (username, json.dumps(data, ensure_ascii=False), json.dumps(data, ensure_ascii=False))
+    )
+    cur.close()
+    db.close()
 
 def load_messages():
-    return load_db('messages')
+    db = get_db()
+    cur = db.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT * FROM messages ORDER BY id DESC LIMIT 500")
+    rows = cur.fetchall()
+    cur.close()
+    db.close()
+    return [dict(r) for r in reversed(rows)]
 
 def save_message(msg):
-    msgs = load_db('messages')
-    msgs.append(msg)
-    if len(msgs) > 100:
-        msgs = msgs[-100:]
-    save_db('messages', msgs)
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "INSERT INTO messages (room, username, \"user\", avatar, text, timestamp) VALUES (%s, %s, %s, %s, %s, %s)",
+        (msg.get('room', 'Общий'), msg.get('username', ''), msg.get('user', ''), msg.get('avatar', ''), msg.get('text', ''), msg.get('timestamp', time.time()))
+    )
+    cur.close()
+    db.close()
 
 def notify_user(username, event, data):
     sid = user_sessions.get(username)
@@ -60,7 +93,6 @@ def index():
     from flask import render_template
     return render_template('index.html')
 
-
 ROLES = {'krembovan': 'owner'}
 
 def get_role(username):
@@ -68,30 +100,23 @@ def get_role(username):
     users = load_users()
     if username.lower() in users and users[username.lower()].get('role') != role:
         users[username.lower()]['role'] = role
-        save_db('users', users)
+        save_user(username.lower(), users[username.lower()])
     return role
-
-# Остальное без изменений
 
 @app.route('/admin')
 def admin_panel():
-    # Проверяем авторизацию
     auth = request.authorization
     if not auth:
         return ('Доступ запрещён', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
     
     username = auth.username.lower()
     password = auth.password
-    
     users = load_users()
     
-    # Проверяем что пользователь существует и пароль верен
     if username not in users or users[username].get('pass') != password:
         return ('Неверный логин или пароль', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
     
     role = get_role(username)
-    
-    # Проверяем права
     if role not in ['owner', 'admin', 'moderator']:
         return ('Доступ запрещён', 403)
     
@@ -110,9 +135,7 @@ def admin_panel():
             'requests': len(d.get('requests', []))
         })
     
-    # Модератор не может удалять пользователей
     can_delete = role in ['owner', 'admin']
-    can_change_role = role in ['owner', 'admin']
     
     html = '''<!DOCTYPE html>
 <html lang="ru">
@@ -155,29 +178,23 @@ def admin_panel():
     <div class="section"><h2>👥 Пользователи</h2><table>
         <tr><th>Username</th><th>Имя</th><th>Роль</th><th>Друзья</th><th>Запросы</th>'''
     
-    if can_delete:
-        html += '<th>Действия</th>'
-    
+    if can_delete: html += '<th>Действия</th>'
     html += '</tr>'
     
     for u in users_list:
         bc = 'badge-' + ('owner' if u['role'] == 'owner' else 'admin' if u['role'] == 'admin' else 'mod' if u['role'] == 'moderator' else 'user')
-        rn = {'owner': 'Владелец', 'admin': 'Админ', 'moderator': 'Модер', 'user': 'Пользователь'}.get(u['role'], u['role'])
+        rn = {'owner':'Владелец','admin':'Админ','moderator':'Модер','user':'Пользователь'}.get(u['role'], u['role'])
         html += f'''<tr><td>@{u['username']}</td><td>{u['display_name']}</td><td><span class="badge {bc}">{rn}</span></td><td>{u['friends']}</td><td>{u['requests']}</td>'''
-        
         if can_delete and u['role'] != 'owner':
-            html += f'''<td>
-                <select onchange="setRole('{u['username']}',this.value)"><option value="user" {"selected" if u['role']=='user' else ""}>Пользователь</option>
+            html += f'''<td><select onchange="setRole('{u['username']}',this.value)"><option value="user" {"selected" if u['role']=='user' else ""}>Пользователь</option>
                 <option value="moderator" {"selected" if u['role']=='moderator' else ""}>Модератор</option>
                 <option value="admin" {"selected" if u['role']=='admin' else ""}>Админ</option></select>
                 <button class="btn btn-danger" onclick="deleteUser('{u['username']}')">Удалить</button></td>'''
         elif u['role'] == 'owner':
             html += '<td><span style="color:#f59e0b;">Владелец</span></td>'
-        
         html += '</tr>'
     
     html += '''</table></div><div class="section"><h2>📝 Сообщения (модерация)</h2>'''
-    
     for m in last_msgs:
         html += f'''<div class="msg-item"><b>@{m.get("username","")}</b>: {m.get("text","")[:100]}
             <button class="btn btn-sm" onclick="deleteMsg('{m.get('timestamp','')}')" style="float:right;">✕</button></div>'''
@@ -192,66 +209,44 @@ def admin_panel():
 @app.route('/admin/delete/<username>', methods=['POST'])
 def admin_delete_user(username):
     auth = request.authorization
-    if not auth:
-        return json.dumps({'message':'Доступ запрещён'}),401
-    
+    if not auth: return json.dumps({'message':'Доступ запрещён'}),401
     admin_un = auth.username.lower()
-    role = get_role(admin_un)
-    
-    if role not in ['owner', 'admin']:
-        return json.dumps({'message':'Нет прав'}),403
-    
+    if get_role(admin_un) not in ['owner', 'admin']: return json.dumps({'message':'Нет прав'}),403
     un = username.lower()
-    if get_role(un) == 'owner':
-        return json.dumps({'message':'Нельзя удалить владельца'}),403
-    
-    users = load_users()
-    if un in users:
-        del users[un]
-        save_db('users', users)
+    if get_role(un) == 'owner': return json.dumps({'message':'Нельзя удалить владельца'}),403
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM users WHERE username = %s", (un,))
+    cur.close()
+    db.close()
     return json.dumps({'message':f'Пользователь @{un} удалён'})
 
 @app.route('/admin/setrole/<username>/<role>', methods=['POST'])
 def admin_set_role(username, role):
     auth = request.authorization
-    if not auth:
-        return json.dumps({'message':'Доступ запрещён'}),401
-    
+    if not auth: return json.dumps({'message':'Доступ запрещён'}),401
     admin_un = auth.username.lower()
-    admin_role = get_role(admin_un)
-    
-    if admin_role not in ['owner', 'admin']:
-        return json.dumps({'message':'Нет прав'}),403
-    
-    if role not in ['user','moderator','admin']:
-        return json.dumps({'message':'Неверная роль'}),400
-    
+    if get_role(admin_un) not in ['owner', 'admin']: return json.dumps({'message':'Нет прав'}),403
+    if role not in ['user','moderator','admin']: return json.dumps({'message':'Неверная роль'}),400
     un = username.lower()
-    if get_role(un) == 'owner':
-        return json.dumps({'message':'Нельзя изменить роль владельца'}),403
-    
+    if get_role(un) == 'owner': return json.dumps({'message':'Нельзя изменить роль владельца'}),403
     ROLES[un] = role
     users = load_users()
     if un in users:
         users[un]['role'] = role
-        save_db('users', users)
+        save_user(un, users[un])
     return json.dumps({'message':f'Роль @{un} изменена на {role}'})
 
 @app.route('/admin/deletemsg/<timestamp>', methods=['POST'])
 def admin_delete_msg(timestamp):
     auth = request.authorization
-    if not auth:
-        return json.dumps({'message':'Доступ запрещён'}),401
-    
-    admin_un = auth.username.lower()
-    role = get_role(admin_un)
-    
-    if role not in ['owner', 'admin', 'moderator']:
-        return json.dumps({'message':'Нет прав'}),403
-    
-    msgs = load_messages()
-    msgs = [m for m in msgs if str(m.get('timestamp')) != timestamp]
-    save_db('messages', msgs)
+    if not auth: return json.dumps({'message':'Доступ запрещён'}),401
+    if get_role(auth.username.lower()) not in ['owner', 'admin', 'moderator']: return json.dumps({'message':'Нет прав'}),403
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM messages WHERE timestamp = %s", (float(timestamp),))
+    cur.close()
+    db.close()
     return json.dumps({'message':'Сообщение удалено'})
 
 @socketio.on('auth')
@@ -308,8 +303,7 @@ def handle_profile_update(data):
     un = data.get('username', '').lower()
     users = load_users()
     if un not in users: return
-    if data.get('display_name', '').strip():
-        users[un]['display_name'] = data['display_name'].strip()
+    if data.get('display_name', '').strip(): users[un]['display_name'] = data['display_name'].strip()
     if 'bio' in data: users[un]['bio'] = data['bio'].strip()
     if data.get('avatar', '').strip(): users[un]['avatar'] = data['avatar'].strip()
     save_user(un, users[un])
@@ -391,13 +385,13 @@ def handle_remove_friend(data):
 def handle_delete_message(data):
     msg_ts = str(data.get('msg_id', ''))
     username = data.get('username', '').lower()
-    role = get_role(username)
-    if role not in ['owner', 'admin', 'moderator']:
-        emit('error_msg', {'text': 'Нет прав'})
-        return
-    msgs = load_messages()
-    msgs = [m for m in msgs if str(m.get('timestamp')) != msg_ts]
-    save_db('messages', msgs)
+    if get_role(username) not in ['owner', 'admin', 'moderator']:
+        emit('error_msg', {'text': 'Нет прав'}); return
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM messages WHERE timestamp = %s", (float(msg_ts),))
+    cur.close()
+    db.close()
     emit('message_deleted', {'msg_id': msg_ts}, broadcast=True)
 
 @socketio.on('message')
