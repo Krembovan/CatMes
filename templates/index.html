@@ -484,7 +484,12 @@ socket.on('history', function(hist) {
     else { for (var i = 0; i < hist.length; i++) renderMessage(hist[i]); }
 });
 
-socket.on('message_deleted', function(data) { showToast('Сообщение удалено', 'info'); });
+socket.on('message_deleted', function(data) {
+    // Удаляем сообщение из DOM без всплывающего уведомления
+    var msgs = document.querySelectorAll('.msg');
+    // Просто перезагружаем текущую комнату
+    socket.emit('join', { room: currentRoom });
+});
 
 document.getElementById('loginPass').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleLogin(); });
 document.getElementById('regPass2').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleRegister(); });

@@ -2,8 +2,7 @@ import eventlet
 eventlet.monkey_patch()
 
 import json, os, time
-from psycopg2.pool import ThreadedConnectionPool
-from psycopg2.extras import RealDictCursor
+import pg8000.native
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room
 
@@ -14,23 +13,27 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 DATABASE_URL = 'postgresql://postgres:krembovan@18@db.tnyfccjvqysytgnhwvwp.supabase.co:5432/postgres'
 user_sessions = {}
 
-pool = ThreadedConnectionPool(1, 10, DATABASE_URL)
-
 def get_db():
-    return pool.getconn()
+    return pg8000.native.Connection(
+        host='db.tnyfccjvqysytgnhwvwp.supabase.co',
+        port=5432,
+        user='postgres',
+        password='krembovan@18',
+        database='postgres'
+    )
 
 def return_db(conn):
-    pool.putconn(conn)
+    conn.close()
 
 def init_db():
     conn = get_db()
-    conn.autocommit = True
-    cur = conn.cursor()
-    cur.execute('''
+    conn.run('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             data JSONB
-        );
+        )
+    ''')
+    conn.run('''
         CREATE TABLE IF NOT EXISTS messages (
             id SERIAL PRIMARY KEY,
             room TEXT,
@@ -39,49 +42,38 @@ def init_db():
             avatar TEXT,
             text TEXT,
             timestamp DOUBLE PRECISION
-        );
+        )
     ''')
-    cur.close()
     return_db(conn)
 
 init_db()
 
 def load_users():
     conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT username, data FROM users")
-    rows = cur.fetchall()
-    cur.close()
+    rows = conn.run("SELECT username, data FROM users")
     return_db(conn)
-    return {row['username']: row['data'] for row in rows}
+    return {row[0]: json.loads(row[1]) for row in rows} if rows else {}
 
 def save_user(username, data):
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO users (username, data) VALUES (%s, %s) ON CONFLICT (username) DO UPDATE SET data = %s",
-        (username, json.dumps(data, ensure_ascii=False), json.dumps(data, ensure_ascii=False))
+    conn.run(
+        "INSERT INTO users (username, data) VALUES (:un, :data) ON CONFLICT (username) DO UPDATE SET data = :data2",
+        un=username, data=json.dumps(data, ensure_ascii=False), data2=json.dumps(data, ensure_ascii=False)
     )
-    cur.close()
     return_db(conn)
 
 def load_messages():
     conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT * FROM messages ORDER BY id DESC LIMIT 500")
-    rows = cur.fetchall()
-    cur.close()
+    rows = conn.run("SELECT * FROM messages ORDER BY id DESC LIMIT 500")
     return_db(conn)
-    return [dict(r) for r in reversed(rows)]
+    return [{'id': r[0], 'room': r[1], 'username': r[2], 'user': r[2+1] if len(r) > 3 else '', 'avatar': r[2+2] if len(r) > 4 else '', 'text': r[2+3] if len(r) > 5 else '', 'timestamp': r[2+4] if len(r) > 6 else 0} for r in reversed(rows)] if rows else []
 
 def save_message(msg):
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO messages (room, username, \"user\", avatar, text, timestamp) VALUES (%s, %s, %s, %s, %s, %s)",
-        (msg.get('room', 'Общий'), msg.get('username', ''), msg.get('user', ''), msg.get('avatar', ''), msg.get('text', ''), msg.get('timestamp', time.time()))
+    conn.run(
+        "INSERT INTO messages (room, username, \"user\", avatar, text, timestamp) VALUES (:room, :un, :user, :avatar, :text, :ts)",
+        room=msg.get('room', 'Общий'), un=msg.get('username', ''), user=msg.get('user', ''), avatar=msg.get('avatar', ''), text=msg.get('text', ''), ts=msg.get('timestamp', time.time())
     )
-    cur.close()
     return_db(conn)
 
 def notify_user(username, event, data):
@@ -219,9 +211,7 @@ def admin_delete_user(username):
     un = username.lower()
     if get_role(un) == 'owner': return json.dumps({'message':'Нельзя удалить владельца'}),403
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM users WHERE username = %s", (un,))
-    cur.close()
+    conn.run("DELETE FROM users WHERE username = :un", un=un)
     return_db(conn)
     return json.dumps({'message':f'Пользователь @{un} удалён'})
 
@@ -247,9 +237,7 @@ def admin_delete_msg(timestamp):
     if not auth: return json.dumps({'message':'Доступ запрещён'}),401
     if get_role(auth.username.lower()) not in ['owner', 'admin', 'moderator']: return json.dumps({'message':'Нет прав'}),403
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM messages WHERE timestamp = %s", (float(timestamp),))
-    cur.close()
+    conn.run("DELETE FROM messages WHERE timestamp = :ts", ts=float(timestamp))
     return_db(conn)
     return json.dumps({'message':'Сообщение удалено'})
 
@@ -392,9 +380,7 @@ def handle_delete_message(data):
     if get_role(username) not in ['owner', 'admin', 'moderator']:
         emit('error_msg', {'text': 'Нет прав'}); return
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM messages WHERE timestamp = %s", (float(msg_ts),))
-    cur.close()
+    conn.run("DELETE FROM messages WHERE timestamp = :ts", ts=float(msg_ts))
     return_db(conn)
     emit('message_deleted', {'msg_id': msg_ts}, broadcast=True)
 
