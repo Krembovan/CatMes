@@ -9,7 +9,6 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-# Хранилище в /tmp — Render не удаляет при деплое!
 DATA_DIR = '/tmp/skam_data'
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -64,19 +63,22 @@ def index():
 ADMIN_USERNAME = 'admin'
 ADMIN_PASSWORD = 'krembovan@181818'
 
-ROLES = {
-    'krembovan': 'owner',
-}
+ROLES = {'krembovan': 'owner'}
 
 ROLE_PERMS = {
     'owner': ['admin_panel', 'manage_roles', 'delete_users', 'delete_messages', 'view_stats'],
-    'admin': ['admin_panel', 'delete_users', 'view_stats'],
+    'admin': ['admin_panel', 'delete_users', 'delete_messages', 'view_stats'],
     'moderator': ['admin_panel', 'delete_messages'],
     'user': []
 }
 
 def get_role(username):
-    return ROLES.get(username.lower(), 'user')
+    role = ROLES.get(username.lower(), 'user')
+    users = load_users()
+    if username.lower() in users and users[username.lower()].get('role') != role:
+        users[username.lower()]['role'] = role
+        save_db('users', users)
+    return role
 
 @app.route('/admin')
 def admin_panel():
@@ -141,21 +143,24 @@ def admin_panel():
     
     for u in users_list:
         bc = 'badge-' + ('owner' if u['role'] == 'owner' else 'admin' if u['role'] == 'admin' else 'mod' if u['role'] == 'moderator' else 'user')
-        rn = {'owner':'Владелец','admin':'Админ','moderator':'Модер','user':'Пользователь'}.get(u['role'], u['role'])
+        rn = {'owner': 'Владелец', 'admin': 'Админ', 'moderator': 'Модер', 'user': 'Пользователь'}.get(u['role'], u['role'])
         html += f'''<tr><td>@{u['username']}</td><td>{u['display_name']}</td><td><span class="badge {bc}">{rn}</span></td><td>{u['friends']}</td><td>{u['requests']}</td>
             <td><select onchange="setRole('{u['username']}',this.value)"><option value="user" {"selected" if u['role']=='user' else ""}>Пользователь</option>
             <option value="moderator" {"selected" if u['role']=='moderator' else ""}>Модератор</option>
             <option value="admin" {"selected" if u['role']=='admin' else ""}>Админ</option></select>
             <button class="btn btn-danger" onclick="deleteUser('{u['username']}')">Удалить</button></td></tr>'''
     
-    html += '''</table></div><div class="section"><h2>📝 Последние сообщения</h2>'''
+    html += '''</table></div><div class="section"><h2>📝 Последние сообщения (модерация)</h2>'''
     
     for m in last_msgs:
-        html += f'<div class="msg-item"><b>@{m.get("username","")}</b>: {m.get("text","")[:100]} <span style="color:#94a3b8;font-size:0.7rem;">({m.get("room","")})</span></div>'
+        html += f'''<div class="msg-item"><b>@{m.get("username","")}</b>: {m.get("text","")[:100]}
+            <span style="color:#94a3b8;font-size:0.7rem;">({m.get("room","")})</span>
+            <button class="btn btn-sm" onclick="deleteMsg('{m.get('timestamp','')}')" style="float:right;">✕</button></div>'''
     
     html += '''</div><script>
         function deleteUser(un){if(!confirm("Удалить @"+un+"?"))return;fetch('/admin/delete/'+un,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}
         function setRole(un,r){fetch('/admin/setrole/'+un+'/'+r,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}
+        function deleteMsg(ts){fetch('/admin/deletemsg/'+ts,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}
     </script></body></html>'''
     return html
 
@@ -188,6 +193,16 @@ def admin_set_role(username, role):
         save_db('users', users)
     return json.dumps({'message':f'Роль @{un} изменена на {role}'})
 
+@app.route('/admin/deletemsg/<timestamp>', methods=['POST'])
+def admin_delete_msg(timestamp):
+    auth = request.authorization
+    if not auth or auth.username != ADMIN_USERNAME or auth.password != ADMIN_PASSWORD:
+        return json.dumps({'message':'Доступ запрещён'}),401
+    msgs = load_messages()
+    msgs = [m for m in msgs if str(m.get('timestamp')) != timestamp]
+    save_db('messages', msgs)
+    return json.dumps({'message':'Сообщение удалено'})
+
 @socketio.on('auth')
 def handle_auth(data):
     action = data.get('action', 'login')
@@ -216,7 +231,7 @@ def handle_auth(data):
         new_user = {
             'username': un, 'display_name': dn or un, 'pass': pwd,
             'avatar': f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
-            'bio': 'Пользователь SKAM', 'friends': [], 'requests': [], 'notifications': []
+            'bio': 'Пользователь SKAM', 'friends': [], 'requests': [], 'notifications': [], 'role': get_role(un)
         }
         save_user(un, new_user)
         user_sessions[un] = request.sid
@@ -244,10 +259,8 @@ def handle_profile_update(data):
     if un not in users: return
     if data.get('display_name', '').strip():
         users[un]['display_name'] = data['display_name'].strip()
-    if 'bio' in data:
-        users[un]['bio'] = data['bio'].strip()
-    if data.get('avatar', '').strip():
-        users[un]['avatar'] = data['avatar'].strip()
+    if 'bio' in data: users[un]['bio'] = data['bio'].strip()
+    if data.get('avatar', '').strip(): users[un]['avatar'] = data['avatar'].strip()
     save_user(un, users[un])
     emit('profile_updated', {'user': users[un]})
 
@@ -255,35 +268,15 @@ def handle_profile_update(data):
 def handle_friend_request(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower().replace('@', '')
-    
-    if not target_un:
-        emit('friend_msg', {'text': 'Введите имя', 'type': 'error'})
-        return
-    
+    if not target_un: emit('friend_msg', {'text': 'Введите имя', 'type': 'error'}); return
     users = load_users()
-    
-    if target_un not in users:
-        emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'})
-        return
-    if target_un == my_un:
-        emit('friend_msg', {'text': 'Нельзя добавить себя', 'type': 'error'})
-        return
-    
+    if target_un not in users: emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'}); return
+    if target_un == my_un: emit('friend_msg', {'text': 'Нельзя добавить себя', 'type': 'error'}); return
     target = users[target_un]
-    
-    if my_un in target.get('friends', []):
-        emit('friend_msg', {'text': 'Вы уже друзья', 'type': 'info'})
-        return
-    if my_un in target.get('requests', []):
-        emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'})
-        return
-    
+    if my_un in target.get('friends', []): emit('friend_msg', {'text': 'Вы уже друзья', 'type': 'info'}); return
+    if my_un in target.get('requests', []): emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'}); return
     target.setdefault('requests', []).append(my_un)
-    notif = {
-        'id': str(int(time.time() * 1000)), 'type': 'friend_request', 'from': my_un,
-        'from_name': users[my_un].get('display_name', my_un),
-        'text': f'@{my_un} хочет добавить вас в друзья', 'timestamp': time.time(), 'read': False
-    }
+    notif = {'id': str(int(time.time() * 1000)), 'type': 'friend_request', 'from': my_un, 'from_name': users[my_un].get('display_name', my_un), 'text': f'@{my_un} хочет добавить вас в друзья', 'timestamp': time.time(), 'read': False}
     target.setdefault('notifications', []).insert(0, notif)
     save_user(target_un, target)
     emit('friend_msg', {'text': f'Запрос отправлен @{target_un}', 'type': 'success'})
@@ -301,8 +294,7 @@ def handle_accept(data):
         if req.lower() == target_un: found = req; break
     if not found: return
     user['requests'].remove(found)
-    if target_un not in user.get('friends', []):
-        user.setdefault('friends', []).append(target_un)
+    if target_un not in user.get('friends', []): user.setdefault('friends', []).append(target_un)
     if target_un in users:
         if my_un not in users[target_un].get('friends', []):
             users[target_un].setdefault('friends', []).append(my_un)
@@ -343,6 +335,19 @@ def handle_remove_friend(data):
         save_user(target_un, users[target_un])
     emit('auth_result', {'success': True, 'user': users[my_un]})
     notify_user(target_un, 'friend_removed_notify', {'user': users.get(target_un), 'by': my_un})
+
+@socketio.on('delete_message')
+def handle_delete_message(data):
+    msg_ts = str(data.get('msg_id', ''))
+    username = data.get('username', '').lower()
+    role = get_role(username)
+    if role not in ['owner', 'admin', 'moderator']:
+        emit('error_msg', {'text': 'Нет прав'})
+        return
+    msgs = load_messages()
+    msgs = [m for m in msgs if str(m.get('timestamp')) != msg_ts]
+    save_db('messages', msgs)
+    emit('message_deleted', {'msg_id': msg_ts}, broadcast=True)
 
 @socketio.on('message')
 def handle_msg(data):
@@ -385,6 +390,8 @@ def handle_get_user_profile(data):
         emit('user_profile', {'error': 'Пользователь не найден'})
         return
     user = users[target_un]
+    role = get_role(target_un)
+    role_names = {'owner': '👑 Владелец', 'admin': '🛡️ Админ', 'moderator': '🛡️ Модер', 'user': '👤 Пользователь'}
     emit('user_profile', {
         'username': target_un,
         'user': {
@@ -393,7 +400,8 @@ def handle_get_user_profile(data):
             'bio': user.get('bio', ''),
             'friends': user.get('friends', []),
             'requests': user.get('requests', []),
-            'role': user.get('role', 'user')
+            'role': role,
+            'role_name': role_names.get(role, 'Пользователь')
         }
     })
 

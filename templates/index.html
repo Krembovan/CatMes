@@ -13,207 +13,76 @@
             --danger: #ef4444; --success: #10b981;
         }
         * { margin:0; padding:0; box-sizing:border-box; }
-        body {
-            background: #090c12; color: var(--text);
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            height: 100vh; overflow: hidden;
-        }
+        body { background: #090c12; color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; }
         .app-container { display: flex; height: 100vh; }
-        .sidebar {
-            width: 320px; background: var(--bg);
-            border-right: 1px solid var(--border);
-            display: flex; flex-direction: column;
-        }
-        .sidebar-header {
-            padding: 20px; display: flex; justify-content: space-between;
-            align-items: center; border-bottom: 1px solid var(--border);
-        }
-        .logo {
-            font-size: 1.5rem; font-weight: 900;
-            background: linear-gradient(135deg, var(--primary), var(--accent));
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        }
+        .sidebar { width: 320px; background: var(--bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .sidebar-header { padding: 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+        .logo { font-size: 1.5rem; font-weight: 900; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .header-btns { display: flex; gap: 8px; }
-        .icon-btn {
-            width: 38px; height: 38px; border-radius: 12px;
-            border: 1px solid var(--border); background: var(--surface);
-            color: var(--text); cursor: pointer; font-size: 1.2rem;
-            display: flex; align-items: center; justify-content: center;
-            transition: 0.2s; position: relative;
-        }
+        .icon-btn { width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; transition: 0.2s; position: relative; }
         .icon-btn:hover { background: var(--primary); border-color: var(--primary); }
-        .badge-count {
-            position: absolute; top: -6px; right: -6px;
-            background: var(--danger); color: white;
-            font-size: 0.6rem; width: 18px; height: 18px;
-            border-radius: 50%; display: flex; align-items: center;
-            justify-content: center; font-weight: bold; display: none;
-        }
+        .badge-count { position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; font-size: 0.6rem; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; display: none; }
         .badge-count.show { display: flex; }
         .sidebar-nav { flex: 1; overflow-y: auto; padding: 15px; }
-        .section-label {
-            font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
-            letter-spacing: 2px; color: var(--text-secondary);
-            padding: 15px 12px 8px;
-        }
-        .chat-item, .friend-item {
-            display: flex; align-items: center; gap: 12px;
-            padding: 10px 12px; border-radius: 12px;
-            cursor: pointer; transition: 0.2s; color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
+        .section-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--text-secondary); padding: 15px 12px 8px; }
+        .chat-item, .friend-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; cursor: pointer; transition: 0.2s; color: var(--text-secondary); font-size: 0.9rem; }
         .chat-item:hover, .friend-item:hover { background: var(--surface); color: var(--text); }
         .chat-item.active { background: rgba(124,92,252,0.15); color: var(--text); }
-        .chat-avatar {
-            width: 38px; height: 38px; border-radius: 12px;
-            background: linear-gradient(135deg, var(--primary), var(--accent));
-            display: flex; align-items: center; justify-content: center;
-            font-weight: 700; flex-shrink: 0; font-size: 0.9rem; overflow: hidden;
-        }
-        .badge-accept {
-            background: var(--primary); color: white; border: none;
-            padding: 5px 12px; border-radius: 20px; font-size: 0.7rem;
-            cursor: pointer; font-weight: 600; margin-left: auto;
-        }
-        .friend-remove-btn {
-            cursor: pointer; color: var(--text-secondary);
-            font-size: 1rem; padding: 4px 8px; border-radius: 6px;
-        }
+        .chat-avatar { width: 38px; height: 38px; border-radius: 12px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; font-size: 0.9rem; overflow: hidden; }
+        .badge-accept { background: var(--primary); color: white; border: none; padding: 5px 12px; border-radius: 20px; font-size: 0.7rem; cursor: pointer; font-weight: 600; margin-left: auto; }
+        .friend-remove-btn { cursor: pointer; color: var(--text-secondary); font-size: 1rem; padding: 4px 8px; border-radius: 6px; }
         .friend-remove-btn:hover { color: var(--danger); background: rgba(239,68,68,0.1); }
-        .profile-mini {
-            padding: 15px 20px; border-top: 1px solid var(--border);
-            display: flex; align-items: center; gap: 12px; cursor: pointer;
-        }
-        .avatar-mini {
-            width: 38px; height: 38px; border-radius: 12px;
-            object-fit: cover; background: var(--surface);
-        }
+        .profile-mini { padding: 15px 20px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 12px; cursor: pointer; }
+        .avatar-mini { width: 38px; height: 38px; border-radius: 12px; object-fit: cover; background: var(--surface); }
         .profile-info { flex: 1; min-width: 0; }
         .profile-name { font-weight: 600; font-size: 0.9rem; }
         .profile-username { font-size: 0.75rem; color: var(--text-secondary); }
         .chat-area { flex: 1; display: flex; flex-direction: column; }
-        .chat-header {
-            padding: 18px 25px; border-bottom: 1px solid var(--border);
-            font-weight: 600; background: rgba(13,17,23,0.8);
-        }
-        #messages {
-            flex: 1; padding: 25px; overflow-y: auto;
-            display: flex; flex-direction: column; gap: 8px;
-        }
-        .msg {
-            display: flex; gap: 10px; max-width: 75%;
-            animation: fadeIn 0.3s ease;
-        }
+        .chat-header { padding: 18px 25px; border-bottom: 1px solid var(--border); font-weight: 600; background: rgba(13,17,23,0.8); }
+        #messages { flex: 1; padding: 25px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        .msg { display: flex; gap: 10px; max-width: 75%; animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
         .msg.my { align-self: flex-end; flex-direction: row-reverse; }
-        .msg-avatar {
-            width: 34px; height: 34px; border-radius: 10px;
-            object-fit: cover; flex-shrink: 0;
-        }
-        .msg-bubble {
-            padding: 12px 16px; border-radius: 18px;
-            font-size: 0.9rem; line-height: 1.4; word-break: break-word;
-        }
-        .msg:not(.my) .msg-bubble {
-            background: var(--surface); border: 1px solid var(--border);
-            border-bottom-left-radius: 6px;
-        }
-        .msg.my .msg-bubble {
-            background: linear-gradient(135deg, var(--primary), #9b7cfc);
-            color: white; border-bottom-right-radius: 6px;
-        }
+        .msg-avatar { width: 34px; height: 34px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+        .msg-bubble { padding: 12px 16px; border-radius: 18px; font-size: 0.9rem; line-height: 1.4; word-break: break-word; }
+        .msg:not(.my) .msg-bubble { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 6px; }
+        .msg.my .msg-bubble { background: linear-gradient(135deg, var(--primary), #9b7cfc); color: white; border-bottom-right-radius: 6px; }
         .msg-author { font-weight: 700; font-size: 0.8rem; margin-bottom: 2px; color: var(--accent); }
         .msg.my .msg-author { color: rgba(255,255,255,0.8); }
-        .empty-chat {
-            flex: 1; display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            color: var(--text-secondary); gap: 15px;
-        }
+        .msg-delete-btn { cursor: pointer; font-size: 0.7rem; color: #ef4444; margin-left: 8px; opacity: 0; }
+        .msg:hover .msg-delete-btn { opacity: 1; }
+        .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-secondary); gap: 15px; }
         .empty-chat-icon { font-size: 4rem; opacity: 0.3; }
-        .input-box {
-            padding: 20px 25px; display: flex; gap: 12px;
-            background: var(--bg); border-top: 1px solid var(--border);
-        }
-        .input-msg {
-            flex: 1; background: var(--surface); border: 1px solid var(--border);
-            padding: 14px 20px; border-radius: 30px; color: var(--text);
-            font-size: 0.95rem; outline: none;
-        }
-        .btn-send {
-            background: var(--primary); border: none; width: 48px; height: 48px;
-            border-radius: 50%; cursor: pointer; font-size: 1.2rem;
-            display: flex; align-items: center; justify-content: center;
-            flex-shrink: 0; color: white;
-        }
-        .notif-overlay {
-            position: fixed; top: 60px; right: 20px; width: 360px;
-            max-height: 500px; background: var(--surface);
-            border: 1px solid var(--border); border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6); z-index: 200;
-            display: none; overflow-y: auto;
-        }
+        .input-box { padding: 20px 25px; display: flex; gap: 12px; background: var(--bg); border-top: 1px solid var(--border); }
+        .input-msg { flex: 1; background: var(--surface); border: 1px solid var(--border); padding: 14px 20px; border-radius: 30px; color: var(--text); font-size: 0.95rem; outline: none; }
+        .btn-send { background: var(--primary); border: none; width: 48px; height: 48px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: white; }
+        .notif-overlay { position: fixed; top: 60px; right: 20px; width: 360px; max-height: 500px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); z-index: 200; display: none; overflow-y: auto; }
         .notif-overlay.open { display: block; }
-        .notif-header {
-            padding: 15px 20px; font-weight: 700;
-            border-bottom: 1px solid var(--border);
-            display: flex; justify-content: space-between;
-        }
+        .notif-header { padding: 15px 20px; font-weight: 700; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
         .notif-item { padding: 15px 20px; border-bottom: 1px solid rgba(255,255,255,0.03); }
         .notif-text { font-size: 0.85rem; margin-bottom: 5px; }
         .notif-time { font-size: 0.7rem; color: var(--text-secondary); }
         .notif-actions { display: flex; gap: 8px; margin-top: 10px; }
-        .btn-sm {
-            padding: 6px 16px; border-radius: 20px; border: none;
-            cursor: pointer; font-size: 0.75rem; font-weight: 600;
-        }
+        .btn-sm { padding: 6px 16px; border-radius: 20px; border: none; cursor: pointer; font-size: 0.75rem; font-weight: 600; }
         .btn-sm.primary { background: var(--primary); color: white; }
         .btn-sm.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
-        .modal-overlay {
-            display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.8); backdrop-filter: blur(12px);
-            z-index: 1000; align-items: center; justify-content: center;
-        }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(12px); z-index: 1000; align-items: center; justify-content: center; }
         .modal-overlay.active { display: flex; }
-        .modal {
-            background: var(--bg); border: 1px solid var(--border);
-            border-radius: 24px; padding: 35px; width: 420px;
-            max-width: 90vw; max-height: 90vh; overflow-y: auto;
-        }
+        .modal { background: var(--bg); border: 1px solid var(--border); border-radius: 24px; padding: 35px; width: 420px; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
         .modal h2 { text-align: center; margin-bottom: 25px; font-weight: 700; }
         .input-group { margin-bottom: 16px; }
-        .input-group label {
-            display: block; font-size: 0.75rem; font-weight: 600;
-            color: var(--text-secondary); margin-bottom: 6px;
-        }
-        .input-group input, .input-group textarea {
-            width: 100%; padding: 12px 16px; border-radius: 12px;
-            background: var(--surface); border: 1px solid var(--border);
-            color: var(--text); font-size: 0.95rem; outline: none;
-        }
+        .input-group label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+        .input-group input, .input-group textarea { width: 100%; padding: 12px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 0.95rem; outline: none; }
         .input-group input:disabled { opacity: 0.5; }
-        .btn {
-            width: 100%; padding: 14px; border-radius: 14px;
-            border: none; font-weight: 600; font-size: 1rem;
-            cursor: pointer; margin-bottom: 8px;
-        }
+        .btn { width: 100%; padding: 14px; border-radius: 14px; border: none; font-weight: 600; font-size: 1rem; cursor: pointer; margin-bottom: 8px; }
         .btn-primary { background: var(--primary); color: white; }
         .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
         .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
         .modal-switch { text-align: center; margin-top: 20px; font-size: 0.85rem; color: var(--text-secondary); }
         .modal-switch a { color: var(--accent); cursor: pointer; font-weight: 600; }
         .error-text { color: var(--danger); font-size: 0.8rem; min-height: 20px; }
-        .avatar-large {
-            width: 90px; height: 90px; border-radius: 20px;
-            object-fit: cover; display: block; margin: 0 auto 20px;
-            border: 3px solid var(--primary);
-        }
-        .toast {
-            position: fixed; top: 20px; left: 50%;
-            transform: translateX(-50%) translateY(-120px);
-            background: var(--surface); border: 1px solid var(--border);
-            padding: 15px 25px; border-radius: 14px; z-index: 3000;
-            transition: transform 0.3s ease;
-        }
+        .avatar-large { width: 90px; height: 90px; border-radius: 20px; object-fit: cover; display: block; margin: 0 auto 20px; border: 3px solid var(--primary); }
+        .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-120px); background: var(--surface); border: 1px solid var(--border); padding: 15px 25px; border-radius: 14px; z-index: 3000; transition: transform 0.3s ease; }
         .toast.show { transform: translateX(-50%) translateY(0); }
         .toast.success { border-left: 4px solid var(--success); }
         .toast.error { border-left: 4px solid var(--danger); }
@@ -261,7 +130,6 @@
 <div id="friendOverlay" class="modal-overlay">
     <div class="modal">
         <h2>🔍 Найти друга</h2>
-
         <div class="input-group"><label>Username</label><input type="text" id="searchUser" placeholder="@username" onfocus="if(this.value=='')this.value='@';" oninput="if(!this.value.startsWith('@'))this.value='@'+this.value.replace('@','');"></div>
         <div id="friendError" class="error-text"></div>
         <button class="btn btn-primary" onclick="sendFriendReq()">📨 Отправить запрос</button>
@@ -297,13 +165,13 @@
             <div id="friendList"></div>
         </div>
         <div class="profile-mini" onclick="openModal('profileOverlay');loadProfile();">
-    <img id="myAvatar" class="avatar-mini" src="" alt="Аватар">
-    <div class="profile-info">
-        <div class="profile-name" id="myName">—</div>
-        <div class="profile-username" id="myUsername">@—</div>
-        <div id="myRole" style="font-size:0.7rem; color: #f59e0b; margin-top: 2px;"></div>
-    </div>
-</div>
+            <img id="myAvatar" class="avatar-mini" src="" alt="Аватар">
+            <div class="profile-info">
+                <div class="profile-name" id="myName">—</div>
+                <div class="profile-username" id="myUsername">@—</div>
+                <div id="myRole" style="font-size:0.7rem; color: #f59e0b; margin-top: 2px;"></div>
+            </div>
+        </div>
     </div>
     <div class="chat-area">
         <div class="chat-header" id="chatHeader"># Общий канал</div>
@@ -401,10 +269,8 @@ function updateMyInfo() {
     document.getElementById('myName').textContent = myData.display_name;
     document.getElementById('myUsername').textContent = '@' + myData.username;
     document.getElementById('myAvatar').src = myData.avatar;
-    
-    // Отображение роли
     var roleEl = document.getElementById('myRole');
-    var roleNames = {'owner': '👑 Владелец', 'admin': '🛡️ Админ', 'moderator': '🛡️ Модер', 'user': 'Пользователь'};
+    var roleNames = {'owner': '👑 Владелец', 'admin': '🛡️ Админ', 'moderator': '🛡️ Модер', 'user': '👤 Пользователь'};
     if (roleEl) roleEl.textContent = roleNames[myData.role] || '';
 }
 
@@ -435,8 +301,7 @@ socket.on('profile_updated', function(data) {
 function logout() {
     localStorage.removeItem('skam_user');
     localStorage.removeItem('skam_pass');
-    myData = null;
-    dmUser = null;
+    myData = null; dmUser = null;
     document.getElementById('mainApp').style.display = 'none';
     document.getElementById('authOverlay').classList.add('active');
     document.getElementById('messages').innerHTML = '<div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Выберите чат</div></div>';
@@ -453,8 +318,7 @@ function updateBadge() {
     var total = (myData && myData.requests ? myData.requests.length : 0) + notifications.filter(function(n){ return !n.read; }).length;
     var badge = document.getElementById('notifBadge');
     badge.textContent = total;
-    if (total > 0) { badge.classList.add('show'); }
-    else { badge.classList.remove('show'); }
+    if (total > 0) { badge.classList.add('show'); } else { badge.classList.remove('show'); }
 }
 
 function renderNotifications() {
@@ -463,63 +327,44 @@ function renderNotifications() {
         return { type: 'friend_request', from: un, text: '@' + un + ' хочет добавить вас в друзья', timestamp: Date.now() / 1000 };
     });
     var all = reqs.concat(notifications);
-    
     if (all.length === 0) {
         list.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-secondary);">Нет уведомлений</div>';
         return;
     }
-    
     list.innerHTML = all.map(function(n){
         var btns = '';
         if (n.type === 'friend_request') {
             btns = '<div class="notif-actions">' +
                 '<button class="btn-sm primary" onclick="acceptFriend(\'' + n.from + '\');toggleNotifPanel();">✓ Принять</button>' +
-                '<button class="btn-sm danger" onclick="declineFriend(\'' + n.from + '\');toggleNotifPanel();">✕ Отклонить</button>' +
-            '</div>';
+                '<button class="btn-sm danger" onclick="declineFriend(\'' + n.from + '\');toggleNotifPanel();">✕ Отклонить</button></div>';
         }
         return '<div class="notif-item"><div class="notif-text">' + escapeHtml(n.text) + '</div><div class="notif-time">' + new Date(n.timestamp * 1000).toLocaleString() + '</div>' + btns + '</div>';
     }).join('');
 }
 
-socket.on('new_notification', function(notif) {
-    notifications.unshift(notif);
-    updateBadge();
-    showToast(notif.text, 'info');
-});
+socket.on('new_notification', function(notif) { notifications.unshift(notif); updateBadge(); showToast(notif.text, 'info'); });
 
 function updateFriendList() {
     if (!myData) return;
     updateBadge();
     var list = document.getElementById('friendList');
     var html = '';
-    
     (myData.requests || []).forEach(function(un){
-        html += '<div class="friend-item" style="border:1px dashed var(--primary);">' +
-            '<div class="chat-avatar">👤</div><span style="flex:1;">@' + escapeHtml(un) + '</span>' +
-            '<button class="badge-accept" onclick="event.stopPropagation();acceptFriend(\'' + escapeHtml(un) + '\')">✓ Принять</button></div>';
+        html += '<div class="friend-item" style="border:1px dashed var(--primary);"><div class="chat-avatar">👤</div><span style="flex:1;">@' + escapeHtml(un) + '</span><button class="badge-accept" onclick="event.stopPropagation();acceptFriend(\'' + escapeHtml(un) + '\')">✓ Принять</button></div>';
     });
-    
     (myData.friends || []).forEach(function(un){
-        html += '<div class="friend-item" onclick="startDM(\'' + escapeHtml(un) + '\')">' +
-            '<div class="chat-avatar">🔵</div><span style="flex:1;">@' + escapeHtml(un) + '</span>' +
-            '<span class="friend-remove-btn" onclick="event.stopPropagation();removeFriend(\'' + escapeHtml(un) + '\')">✕</span></div>';
+        html += '<div class="friend-item"><div class="chat-avatar" onclick="event.stopPropagation();viewProfile(\'' + escapeHtml(un) + '\')" style="cursor:pointer;">🔵</div><span style="flex:1;" onclick="startDM(\'' + escapeHtml(un) + '\')">@' + escapeHtml(un) + '</span><span class="friend-remove-btn" onclick="event.stopPropagation();removeFriend(\'' + escapeHtml(un) + '\')">✕</span></div>';
     });
-    
     if (!html) html = '<div style="padding:10px;color:var(--text-secondary);font-size:0.8rem;">Нет друзей</div>';
     list.innerHTML = html;
 }
 
 function updateRoomList() {
     var list = document.getElementById('roomList');
-    var html = '<div class="chat-item active" onclick="switchRoom(\'Общий\')" data-room="Общий"><div class="chat-avatar">🌍</div><span>Общий канал</span></div>';
-    list.innerHTML = html;
+    list.innerHTML = '<div class="chat-item active" onclick="switchRoom(\'Общий\')" data-room="Общий"><div class="chat-avatar">🌍</div><span>Общий канал</span></div>';
 }
 
-function openFriendModal() {
-    document.getElementById('searchUser').value = '@';
-    document.getElementById('friendError').textContent = '';
-    openModal('friendOverlay');
-}
+function openFriendModal() { document.getElementById('searchUser').value = '@'; document.getElementById('friendError').textContent = ''; openModal('friendOverlay'); }
 
 function sendFriendReq() {
     var target = document.getElementById('searchUser').value.trim();
@@ -530,39 +375,30 @@ function sendFriendReq() {
 
 function acceptFriend(un) { socket.emit('accept_friend', { my_username: myData.username, target_username: un }); }
 function declineFriend(un) { socket.emit('decline_friend', { my_username: myData.username, target_username: un }); }
-function removeFriend(un) {
-    if (!confirm('Удалить @' + un + ' из друзей?')) return;
-    socket.emit('remove_friend', { my_username: myData.username, target_username: un });
-}
+function removeFriend(un) { if (!confirm('Удалить @' + un + ' из друзей?')) return; socket.emit('remove_friend', { my_username: myData.username, target_username: un }); }
+
 function viewProfile(un) {
-    if (un === myData.username) {
-        openModal('profileOverlay');
-        loadProfile();
-        return;
-    }
-    
+    if (un === myData.username) { openModal('profileOverlay'); loadProfile(); return; }
     socket.emit('get_user_profile', { username: un, requester: myData.username });
 }
 
 socket.on('user_profile', function(data) {
-    if (data.error) {
-        showToast(data.error, 'error');
-        return;
-    }
-    
+    if (data.error) { showToast(data.error, 'error'); return; }
     var u = data.user;
     var isFriend = myData.friends && myData.friends.indexOf(data.username) !== -1;
     var isRequested = myData.requests && myData.requests.indexOf(data.username) !== -1;
     var isRequester = u.requests && u.requests.indexOf(myData.username) !== -1;
+    var roleNames = {'owner': '👑 Владелец', 'admin': '🛡️ Админ', 'moderator': '🛡️ Модер', 'user': '👤 Пользователь'};
+    var roleClass = u.role === 'owner' ? 'color:#f59e0b;' : u.role === 'admin' ? 'color:#ef4444;' : u.role === 'moderator' ? 'color:#10b981;' : 'color:#94a3b8;';
     
     var html = '<h2>👤 Профиль</h2>';
     html += '<img src="' + escapeHtml(u.avatar || '') + '" class="avatar-large" alt="Аватар">';
     html += '<div style="text-align:center; font-size:1.2rem; font-weight:700;">' + escapeHtml(u.display_name) + '</div>';
     html += '<div style="text-align:center; color:var(--text-secondary);">@' + escapeHtml(data.username) + '</div>';
+    html += '<div style="text-align:center; font-weight:600; ' + roleClass + '">' + (roleNames[u.role] || '👤 Пользователь') + '</div>';
     html += '<div style="text-align:center; margin:10px 0; padding:8px; background:var(--surface); border-radius:8px;">' + escapeHtml(u.bio || '') + '</div>';
     html += '<div style="display:flex; gap:20px; justify-content:center; margin:10px 0; color:var(--text-secondary); font-size:0.85rem;">';
-    html += '<span>Друзей: ' + (u.friends ? u.friends.length : 0) + '</span>';
-    html += '</div>';
+    html += '<span>Друзей: ' + (u.friends ? u.friends.length : 0) + '</span></div>';
     
     if (!isFriend && !isRequester && !isRequested) {
         html += '<button class="btn btn-primary" onclick="sendFriendReqTo(\'' + data.username + '\')">📨 Добавить в друзья</button>';
@@ -573,70 +409,37 @@ socket.on('user_profile', function(data) {
     } else if (isFriend) {
         html += '<button class="btn btn-primary" onclick="startDM(\'' + data.username + '\');closeModal(\'userProfileOverlay\');">💬 Написать</button>';
     }
-    
     html += '<button class="btn btn-secondary" onclick="closeModal(\'userProfileOverlay\')">Закрыть</button>';
     
-    var modal = document.getElementById('userProfileContent');
-    modal.innerHTML = html;
+    document.getElementById('userProfileContent').innerHTML = html;
     openModal('userProfileOverlay');
 });
 
-function sendFriendReqTo(un) {
-    socket.emit('send_friend_request', { my_username: myData.username, target_username: un });
-    showToast('Запрос отправлен', 'success');
-    closeModal('userProfileOverlay');
-}
+function sendFriendReqTo(un) { socket.emit('send_friend_request', { my_username: myData.username, target_username: un }); showToast('Запрос отправлен', 'success'); closeModal('userProfileOverlay'); }
 
 socket.on('friend_msg', function(data) { showToast(data.text, data.type || 'info'); });
 
 socket.on('incoming_friend_request', function(data) {
-    if (myData && data.user && data.user.username === myData.username) {
-        myData = data.user;
-        updateFriendList();
-        updateBadge();
-        showToast('@' + data.from + ' хочет добавить вас в друзья', 'info');
-    }
+    if (myData && data.user && data.user.username === myData.username) { myData = data.user; updateFriendList(); updateBadge(); showToast('@' + data.from + ' хочет добавить вас в друзья', 'info'); }
 });
 
 socket.on('friend_accepted_notify', function(data) {
-    if (myData && data.user && data.user.username === myData.username) {
-        myData = data.user;
-        updateFriendList();
-        showToast('@' + data.by + ' принял ваш запрос', 'success');
-    }
+    if (myData && data.user && data.user.username === myData.username) { myData = data.user; updateFriendList(); showToast('@' + data.by + ' принял ваш запрос', 'success'); }
 });
 
 socket.on('friend_removed_notify', function(data) {
-    if (myData && data.user && data.user.username === myData.username) {
-        myData = data.user;
-        updateFriendList();
-        showToast('@' + data.by + ' удалил вас из друзей', 'info');
-    }
+    if (myData && data.user && data.user.username === myData.username) { myData = data.user; updateFriendList(); showToast('@' + data.by + ' удалил вас из друзей', 'info'); }
 });
 
-function startDM(un) {
-    dmUser = un;
-    var a = [myData.username, un].sort();
-    var room = 'dm_' + a[0] + '_' + a[1];
-    switchRoom(room);
-}
+function startDM(un) { dmUser = un; var a = [myData.username, un].sort(); switchRoom('dm_' + a[0] + '_' + a[1]); }
 
 function switchRoom(roomId) {
     currentRoom = roomId;
     document.getElementById('messages').innerHTML = '';
-    
-    if (roomId === 'Общий') {
-        document.getElementById('chatHeader').textContent = '# Общий канал';
-        dmUser = null;
-    } else if (roomId.startsWith('dm_')) {
-        document.getElementById('chatHeader').textContent = '💬 @' + dmUser;
-    }
-    
+    if (roomId === 'Общий') { document.getElementById('chatHeader').textContent = '# Общий канал'; dmUser = null; }
+    else if (roomId.startsWith('dm_')) { document.getElementById('chatHeader').textContent = '💬 @' + dmUser; }
     var items = document.querySelectorAll('.chat-item');
-    for (var i = 0; i < items.length; i++) {
-        if (items[i].getAttribute('data-room') === roomId) { items[i].classList.add('active'); }
-        else { items[i].classList.remove('active'); }
-    }
+    for (var i = 0; i < items.length; i++) { items[i].classList.toggle('active', items[i].getAttribute('data-room') === roomId); }
     socket.emit('join', { room: roomId });
 }
 
@@ -644,60 +447,44 @@ function sendMsg() {
     var input = document.getElementById('msgInput');
     var text = input.value.trim();
     if (!text || !myData) return;
-    socket.emit('message', {
-        room: currentRoom, text: text,
-        user: myData.display_name, username: myData.username, avatar: myData.avatar
-    });
+    socket.emit('message', { room: currentRoom, text: text, user: myData.display_name, username: myData.username, avatar: myData.avatar });
     input.value = '';
+}
+
+function deleteMessage(msgId) {
+    if (!confirm('Удалить сообщение?')) return;
+    socket.emit('delete_message', { msg_id: msgId, username: myData.username });
 }
 
 function renderMessage(msg) {
     var box = document.getElementById('messages');
     if (box.querySelector('.empty-chat')) box.innerHTML = '';
-    
     var isMy = msg.username === (myData ? myData.username : '');
     var div = document.createElement('div');
     div.className = 'msg' + (isMy ? ' my' : '');
-    
+    var canDelete = myData && (myData.role === 'owner' || myData.role === 'admin' || myData.role === 'moderator');
+    var deleteBtn = canDelete ? '<span class="msg-delete-btn" onclick="event.stopPropagation();deleteMessage(\'' + msg.timestamp + '\')" title="Удалить">✕</span>' : '';
     var avatarHtml = '<img class="msg-avatar" src="' + escapeHtml(msg.avatar || '') + '" onerror="this.style.display=\'none\'" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;" title="Посмотреть профиль">';
     var authorHtml = isMy ? '' : '<div class="msg-author" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;color:var(--accent);" title="Посмотреть профиль">' + escapeHtml(msg.user) + '</div>';
-    
-    div.innerHTML = avatarHtml + '<div class="msg-bubble">' + authorHtml + escapeHtml(msg.text) + '</div>';
+    div.innerHTML = avatarHtml + '<div class="msg-bubble">' + authorHtml + escapeHtml(msg.text) + deleteBtn + '</div>';
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
 
 socket.on('message', function(msg) {
-    var msgRoom = msg.room || '';
-    var myRoom = currentRoom || '';
-    
-    // Нормализуем обе комнаты для сравнения
-    if (msgRoom.startsWith('dm_')) {
-        var parts = msgRoom.split('_');
-        if (parts.length >= 3) {
-            var sorted = [parts[1], parts[2]].sort();
-            msgRoom = 'dm_' + sorted[0] + '_' + sorted[1];
-        }
-    }
-    if (myRoom.startsWith('dm_')) {
-        var parts = myRoom.split('_');
-        if (parts.length >= 3) {
-            var sorted = [parts[1], parts[2]].sort();
-            myRoom = 'dm_' + sorted[0] + '_' + sorted[1];
-        }
-    }
-    
+    var msgRoom = msg.room || '', myRoom = currentRoom || '';
+    if (msgRoom.startsWith('dm_')) { var p = msgRoom.split('_'); if (p.length >= 3) { var s = [p[1], p[2]].sort(); msgRoom = 'dm_' + s[0] + '_' + s[1]; } }
+    if (myRoom.startsWith('dm_')) { var p = myRoom.split('_'); if (p.length >= 3) { var s = [p[1], p[2]].sort(); myRoom = 'dm_' + s[0] + '_' + s[1]; } }
     if (msgRoom === myRoom) renderMessage(msg);
 });
 
 socket.on('history', function(hist) {
     document.getElementById('messages').innerHTML = '';
-    if (!hist || hist.length === 0) {
-        document.getElementById('messages').innerHTML = '<div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Нет сообщений</div></div>';
-    } else {
-        for (var i = 0; i < hist.length; i++) { renderMessage(hist[i]); }
-    }
+    if (!hist || hist.length === 0) { document.getElementById('messages').innerHTML = '<div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Нет сообщений</div></div>'; }
+    else { for (var i = 0; i < hist.length; i++) renderMessage(hist[i]); }
 });
+
+socket.on('message_deleted', function(data) { showToast('Сообщение удалено', 'info'); });
 
 document.getElementById('loginPass').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleLogin(); });
 document.getElementById('regPass2').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleRegister(); });
