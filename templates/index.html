@@ -102,14 +102,14 @@
             <div class="modal-switch">Нет аккаунта? <a onclick="switchAuth('register')">Создать</a></div>
         </div>
         <div id="registerForm" style="display:none;">
-            <input type="text" id="regUser" placeholder="@username" onfocus="if(this.value=='')this.value='@';" oninput="if(!this.value.startsWith('@'))this.value='@'+this.value.replace('@','');">
-            <div class="input-group"><label>Имя (Ник)</label><input type="text" id="regName" placeholder="Ваше имя"></div>
-            <div class="input-group"><label>Пароль</label><input type="password" id="regPass" placeholder="минимум 4 символа"></div>
-            <div class="input-group"><label>Повторите пароль</label><input type="password" id="regPass2" placeholder="повторите пароль"></div>
-            <div id="regError" class="error-text"></div>
-            <button class="btn btn-primary" onclick="handleRegister()">Зарегистрироваться</button>
-            <div class="modal-switch">Уже есть аккаунт? <a onclick="switchAuth('login')">Войти</a></div>
-        </div>
+    <div class="input-group"><label>Username</label><input type="text" id="regUser" placeholder="@username" value="@" oninput="if(!this.value.startsWith('@')) this.value = '@' + this.value.replace(/@/g, '');"></div>
+    <div class="input-group"><label>Имя (Ник)</label><input type="text" id="regName" placeholder="Ваше имя"></div>
+    <div class="input-group"><label>Пароль</label><input type="password" id="regPass" placeholder="минимум 4 символа"></div>
+    <div class="input-group"><label>Повторите пароль</label><input type="password" id="regPass2" placeholder="повторите пароль"></div>
+    <div id="regError" class="error-text"></div>
+    <button class="btn btn-primary" onclick="handleRegister()">Зарегистрироваться</button>
+    <div class="modal-switch">Уже есть аккаунт? <a onclick="switchAuth('login')">Войти</a></div>
+</div>
     </div>
 </div>
 
