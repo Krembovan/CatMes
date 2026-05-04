@@ -9,25 +9,18 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'skam_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-DATA_DIR = '/tmp/skam_data'
-os.makedirs(DATA_DIR, exist_ok=True)
-
 user_sessions = {}
 
+# Загружаем из переменной окружения или создаём новую
 def load_db(key):
-    path = os.path.join(DATA_DIR, f'{key}.json')
-    if os.path.exists(path):
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            pass
-    return [] if key == 'messages' else {}
+    try:
+        data = json.loads(os.environ.get(f'SKAM_{key}', '{}' if key != 'messages' else '[]'))
+        return data
+    except:
+        return [] if key == 'messages' else {}
 
 def save_db(key, data):
-    path = os.path.join(DATA_DIR, f'{key}.json')
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.environ[f'SKAM_{key}'] = json.dumps(data, ensure_ascii=False)
 
 def load_users():
     return load_db('users')
@@ -43,8 +36,8 @@ def load_messages():
 def save_message(msg):
     msgs = load_db('messages')
     msgs.append(msg)
-    if len(msgs) > 500:
-        msgs = msgs[-500:]
+    if len(msgs) > 100:
+        msgs = msgs[-100:]
     save_db('messages', msgs)
 
 def notify_user(username, event, data):
@@ -65,13 +58,6 @@ ADMIN_PASSWORD = 'krembovan@181818'
 
 ROLES = {'krembovan': 'owner'}
 
-ROLE_PERMS = {
-    'owner': ['admin_panel', 'manage_roles', 'delete_users', 'delete_messages', 'view_stats'],
-    'admin': ['admin_panel', 'delete_users', 'delete_messages', 'view_stats'],
-    'moderator': ['admin_panel', 'delete_messages'],
-    'user': []
-}
-
 def get_role(username):
     role = ROLES.get(username.lower(), 'user')
     users = load_users()
@@ -79,6 +65,8 @@ def get_role(username):
         users[username.lower()]['role'] = role
         save_db('users', users)
     return role
+
+# Остальное без изменений
 
 @app.route('/admin')
 def admin_panel():
