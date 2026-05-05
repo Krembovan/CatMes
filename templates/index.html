@@ -415,6 +415,9 @@ socket.on('user_profile', function(data) {
     html += '<div style="text-align:center; font-size:1.2rem; font-weight:700;">' + escapeHtml(u.display_name) + '</div>';
     html += '<div style="text-align:center; color:var(--text-secondary);">@' + escapeHtml(data.username) + '</div>';
     html += '<div style="text-align:center; font-weight:600; ' + roleClass + '">' + (roleNames[u.role] || '👤 Пользователь') + '</div>';
+    var lastSeen = u.last_seen ? new Date(u.last_seen * 1000) : null;
+var statusText = u.online ? '🟢 Онлайн' : (lastSeen ? 'Был(а) ' + timeAgo(lastSeen) : '');
+html += '<div style="text-align:center; font-size:0.75rem; color:var(--text-secondary); margin-top:4px;">' + statusText + '</div>';
     html += '<div style="text-align:center; margin:10px 0; padding:8px; background:var(--surface); border-radius:8px;">' + escapeHtml(u.bio || '') + '</div>';
     html += '<div style="display:flex; gap:20px; justify-content:center; margin:10px 0; color:var(--text-secondary); font-size:0.85rem;">';
     html += '<span>Друзей: ' + (u.friends ? u.friends.length : 0) + '</span></div>';
@@ -542,6 +545,14 @@ document.getElementById('regPass2').addEventListener('keypress', function(e) { i
 
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/static/sw.js').catch(function() {});
+}
+
+function timeAgo(date) {
+    var seconds = Math.floor((new Date() - date) / 1000);
+    if (seconds < 60) return 'только что';
+    if (seconds < 3600) return Math.floor(seconds / 60) + ' мин назад';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + ' ч назад';
+    return Math.floor(seconds / 86400) + ' дн назад';
 }
 
 </script>

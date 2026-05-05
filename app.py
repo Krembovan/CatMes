@@ -434,7 +434,9 @@ def handle_get_user_profile(data):
             'friends': user.get('friends', []),
             'requests': user.get('requests', []),
             'role': role,
-            'role_name': role_names.get(role, 'Пользователь')
+            'role_name': role_names.get(role, 'Пользователь'),
+            'online': user.get('online', False),
+            'last_seen': user.get('last_seen', 0)
         }
     })
 
