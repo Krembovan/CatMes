@@ -6,10 +6,10 @@ from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'skam_secure_2024'
+app.config['SECRET_KEY'] = 'cat_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-DATA_DIR = '/tmp/skam_data'
+DATA_DIR = '/tmp/cat_data'
 os.makedirs(DATA_DIR, exist_ok=True)
 
 user_sessions = {}
@@ -118,7 +118,7 @@ def admin_panel():
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>SKAM Admin Panel</title>
+    <title>CAT Admin Panel</title>
     <style>
         body { background: #0d1117; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; padding: 30px; }
         h1 { background: linear-gradient(135deg, #7c5cfc, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
@@ -146,7 +146,7 @@ def admin_panel():
     </style>
 </head>
 <body>
-    <h1>⚡ SKAM Admin Panel</h1>
+    <h1>⚡ CAT Admin Panel</h1>
     <div class="user-info">Вы вошли как: @''' + username + ''' (''' + {'owner':'Владелец','admin':'Админ','moderator':'Модер'}.get(role,'') + ''')</div>
     <div class="stats">
         <div class="stat-card"><div class="stat-value">''' + str(len(users_list)) + '''</div><div class="stat-label">Пользователей</div></div>
@@ -252,7 +252,7 @@ def handle_auth(data):
         new_user = {
             'username': un, 'display_name': dn or un, 'pass': pwd,
             'avatar': f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
-            'bio': 'Пользователь SKAM', 'friends': [], 'requests': [], 'notifications': [], 'role': get_role(un)
+            'bio': 'Пользователь CAT', 'friends': [], 'requests': [], 'notifications': [], 'role': get_role(un)
         }
         save_user(un, new_user)
         user_sessions[un] = request.sid

@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="SKAM">
+    <meta name="apple-mobile-web-app-title" content="CAT>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#090c12">
     <link rel="manifest" href="/static/manifest.json">
-    <link rel="apple-touch-icon" href="https://api.dicebear.com/7.x/bottts-neutral/svg?seed=skam">
-    <title>SKAM Messenger</title>
+    <link rel="apple-touch-icon" href="https://api.dicebear.com/7.x/bottts-neutral/svg?seed=cat">
+    <title>CAT</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         :root {
@@ -108,7 +108,7 @@
 
 <div id="authOverlay" class="modal-overlay active">
     <div class="modal">
-        <h2>⚡ <span style="background:linear-gradient(135deg,#7c5cfc,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">SKAM</span></h2>
+        <h2>⚡ <span style="background:linear-gradient(135deg,#7c5cfc,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">CAT</span></h2>
         <div id="authError" class="error-text" style="text-align:center;margin-bottom:15px;"></div>
         <div id="loginForm">
             <div class="input-group"><label>Username</label><input type="text" id="loginUser" placeholder="@username"></div>
@@ -166,7 +166,7 @@
 <div class="app-container" id="mainApp" style="display:none;">
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <span class="logo">SKAM</span>
+            <span class="logo">CAT</span>
             <div class="header-btns">
                 <div class="icon-btn" onclick="toggleNotifPanel()">🔔<span class="badge-count" id="notifBadge"></span></div>
                 <div class="icon-btn" onclick="openFriendModal()">+</div>
@@ -232,8 +232,8 @@ function switchAuth(mode) {
     document.getElementById('regError').textContent = '';
 }
 
-var savedUser = localStorage.getItem('skam_user');
-var savedPass = localStorage.getItem('skam_pass');
+var savedUser = localStorage.getItem('cat_user');
+var savedPass = localStorage.getItem('cat_pass');
 if (savedUser && savedPass) {
     socket.emit('auth', { action: 'login', username: savedUser, password: savedPass });
 }
@@ -263,8 +263,8 @@ function handleRegister() {
 socket.on('auth_result', function(data) {
     if (data.success) {
         myData = data.user;
-        localStorage.setItem('skam_user', myData.username);
-        localStorage.setItem('skam_pass', document.getElementById('loginPass').value || savedPass || '');
+        localStorage.setItem('cat_user', myData.username);
+        localStorage.setItem('cat_pass', document.getElementById('loginPass').value || savedPass || '');
         notifications = myData.notifications || [];
         document.getElementById('authOverlay').classList.remove('active');
         document.getElementById('mainApp').style.display = 'flex';
@@ -317,8 +317,8 @@ socket.on('profile_updated', function(data) {
 });
 
 function logout() {
-    localStorage.removeItem('skam_user');
-    localStorage.removeItem('skam_pass');
+    localStorage.removeItem('cat_user');
+    localStorage.removeItem('cat_pass');
     myData = null; dmUser = null;
     document.getElementById('mainApp').style.display = 'none';
     document.getElementById('authOverlay').classList.add('active');
@@ -517,6 +517,11 @@ socket.on('message_deleted', function(data) {
 
 document.getElementById('loginPass').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleLogin(); });
 document.getElementById('regPass2').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleRegister(); });
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(function() {});
+}
+
 </script>
 </body>
 </html>
