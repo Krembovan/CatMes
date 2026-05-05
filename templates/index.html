@@ -511,7 +511,6 @@ socket.on('history', function(hist) {
 });
 
 socket.on('message_deleted', function(data) {
-    var msgs = document.querySelectorAll('.msg');
     socket.emit('join', { room: currentRoom });
 });
 

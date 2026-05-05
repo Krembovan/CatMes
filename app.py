@@ -72,6 +72,17 @@ def service_worker():
 
 ROLES = {'krembovan': 'owner'}
 
+def sync_roles():
+    users = load_users()
+    for un in users:
+        if un in ROLES:
+            users[un]['role'] = ROLES[un]
+        elif 'role' not in users[un]:
+            users[un]['role'] = 'user'
+    save_db('users', users)
+
+sync_roles()
+
 def get_role(username):
     role = ROLES.get(username.lower(), 'user')
     users = load_users()
@@ -99,7 +110,8 @@ def admin_panel():
     
     msgs = load_messages()
     msg_count = len(msgs)
-    last_msgs = msgs[-10:] if msgs else []
+    general_msgs = [m for m in msgs if m.get('room') == 'Общий']
+last_msgs = general_msgs[-10:] if general_msgs else []
     last_msgs.reverse()
     
     users_list = []
