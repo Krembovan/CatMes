@@ -65,6 +65,11 @@ def static_files(filename):
     from flask import send_from_directory
     return send_from_directory('templates/static', filename)
 
+@app.route('/sw.js')
+def service_worker():
+    from flask import send_from_directory
+    return send_from_directory('templates/static', 'sw.js')
+
 ROLES = {'krembovan': 'owner'}
 
 def get_role(username):
