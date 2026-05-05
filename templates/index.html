@@ -22,7 +22,7 @@
         * { margin:0; padding:0; box-sizing:border-box; }
         body { background: #090c12; color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; }
         .app-container { display: flex; height: 100vh; }
-        .sidebar { width: 320px; background: var(--bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .sidebar { width: 320px; background: var(--bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; }
         .sidebar-header { padding: 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
         .logo { font-size: 1.5rem; font-weight: 900; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .header-btns { display: flex; gap: 8px; }
@@ -45,7 +45,8 @@
         .profile-name { font-weight: 600; font-size: 0.9rem; }
         .profile-username { font-size: 0.75rem; color: var(--text-secondary); }
         .chat-area { flex: 1; display: flex; flex-direction: column; }
-        .chat-header { padding: 18px 25px; border-bottom: 1px solid var(--border); font-weight: 600; background: rgba(13,17,23,0.8); }
+        .chat-header { padding: 18px 25px; border-bottom: 1px solid var(--border); font-weight: 600; background: rgba(13,17,23,0.8); display: flex; align-items: center; }
+        .back-btn { display: none; cursor: pointer; margin-right: 12px; font-size: 1.3rem; color: var(--text-secondary); }
         #messages { flex: 1; padding: 25px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
         .msg { display: flex; gap: 10px; max-width: 75%; animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
@@ -94,15 +95,11 @@
         .toast.success { border-left: 4px solid var(--success); }
         .toast.error { border-left: 4px solid var(--danger); }
         .toast.info { border-left: 4px solid var(--accent); }
-        @media (max-width: 768px) {
-            .sidebar { width: 260px; }
-            .chat-item, .friend-item { font-size: 0.8rem; padding: 8px 10px; }
-            .msg { max-width: 90%; }
-            .modal { width: 95vw; padding: 20px; }
-        }
         @media (max-width: 480px) {
-            .sidebar { width: 100%; position: absolute; z-index: 50; height: 100vh; }
+            .sidebar { width: 100%; position: absolute; left: 0; top: 0; height: 100vh; z-index: 20; }
+            .sidebar.hidden { display: none; }
             .chat-area { width: 100%; }
+            .back-btn { display: block; }
             .notif-overlay { width: 95vw; right: 2.5vw; }
         }
     </style>
@@ -167,7 +164,7 @@
 <div id="toast" class="toast"></div>
 
 <div class="app-container" id="mainApp" style="display:none;">
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <span class="logo">SKAM</span>
             <div class="header-btns">
@@ -192,7 +189,10 @@
         </div>
     </div>
     <div class="chat-area">
-        <div class="chat-header" id="chatHeader"># Общий канал</div>
+        <div class="chat-header">
+            <span class="back-btn" onclick="goBack()">←</span>
+            <span id="chatHeader"># Общий канал</span>
+        </div>
         <div id="messages"><div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Выберите чат</div></div></div>
         <div class="input-box">
             <input type="text" class="input-msg" id="msgInput" placeholder="Написать сообщение..." onkeypress="if(event.key==='Enter')sendMsg()">
@@ -459,6 +459,14 @@ function switchRoom(roomId) {
     var items = document.querySelectorAll('.chat-item');
     for (var i = 0; i < items.length; i++) { items[i].classList.toggle('active', items[i].getAttribute('data-room') === roomId); }
     socket.emit('join', { room: roomId });
+    // На мобилке скрываем сайдбар при выборе чата
+    if (window.innerWidth <= 480) {
+        document.getElementById('sidebar').classList.add('hidden');
+    }
+}
+
+function goBack() {
+    document.getElementById('sidebar').classList.remove('hidden');
 }
 
 function sendMsg() {
