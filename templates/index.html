@@ -371,7 +371,8 @@ function updateFriendList() {
         html += '<div class="friend-item" style="border:1px dashed var(--primary);"><div class="chat-avatar">👤</div><span style="flex:1;">@' + escapeHtml(un) + '</span><button class="badge-accept" onclick="event.stopPropagation();acceptFriend(\'' + escapeHtml(un) + '\')">✓ Принять</button></div>';
     });
     (myData.friends || []).forEach(function(un){
-        html += '<div class="friend-item"><div class="chat-avatar" onclick="event.stopPropagation();viewProfile(\'' + escapeHtml(un) + '\')" style="cursor:pointer;">🔵</div><span style="flex:1;" onclick="startDM(\'' + escapeHtml(un) + '\')">@' + escapeHtml(un) + '</span><span class="friend-remove-btn" onclick="event.stopPropagation();removeFriend(\'' + escapeHtml(un) + '\')">✕</span></div>';
+        var avatarUrl = 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=' + un;
+        html += '<div class="friend-item"><img class="chat-avatar" src="' + avatarUrl + '" style="object-fit:cover;border-radius:12px;" onclick="event.stopPropagation();viewProfile(\'' + escapeHtml(un) + '\')"><span style="flex:1;" onclick="startDM(\'' + escapeHtml(un) + '\')"><span style="font-weight:600;">@' + escapeHtml(un) + '</span><span id="status_' + un + '" style="display:block;font-size:0.65rem;color:var(--text-secondary);"></span></span><span class="friend-remove-btn" onclick="event.stopPropagation();removeFriend(\'' + escapeHtml(un) + '\')">✕</span></div>';
     });
     if (!html) html = '<div style="padding:10px;color:var(--text-secondary);font-size:0.8rem;">Нет друзей</div>';
     list.innerHTML = html;
@@ -496,6 +497,28 @@ function renderMessage(msg) {
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
+
+socket.on('friend_status', function(data) {
+    var statusEl = document.getElementById('status_' + data.username);
+    if (statusEl) {
+        statusEl.textContent = data.status === 'online' ? '🟢 Онлайн' : 'Был(а) недавно';
+    }
+});
+
+var typingTimer;
+document.getElementById('msgInput').addEventListener('input', function() {
+    if (currentRoom.startsWith('dm_')) {
+        socket.emit('typing', { room: currentRoom, username: myData.username, user: myData.display_name });
+    }
+});
+
+socket.on('user_typing', function(data) {
+    document.getElementById('chatHeader').textContent = '💬 @' + dmUser + ' (печатает...)';
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(function() {
+        document.getElementById('chatHeader').textContent = '💬 @' + dmUser;
+    }, 1000);
+});
 
 socket.on('message', function(msg) {
     var msgRoom = msg.room || '', myRoom = currentRoom || '';
