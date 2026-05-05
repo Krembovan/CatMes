@@ -55,10 +55,10 @@ def notify_user(username, event, data):
         except:
             pass
 
-@app.route('/')
-def index():
-    from flask import render_template
-    return render_template('index.html')
+@app.route('/static/<path:filename>')
+def static_files(filename):
+    from flask import send_from_directory
+    return send_from_directory('templates/static', filename)
 
 ROLES = {'krembovan': 'owner'}
 
