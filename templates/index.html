@@ -2,7 +2,14 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SKAM">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#090c12">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="https://api.dicebear.com/7.x/bottts-neutral/svg?seed=skam">
     <title>SKAM Messenger</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
@@ -87,6 +94,17 @@
         .toast.success { border-left: 4px solid var(--success); }
         .toast.error { border-left: 4px solid var(--danger); }
         .toast.info { border-left: 4px solid var(--accent); }
+        @media (max-width: 768px) {
+            .sidebar { width: 260px; }
+            .chat-item, .friend-item { font-size: 0.8rem; padding: 8px 10px; }
+            .msg { max-width: 90%; }
+            .modal { width: 95vw; padding: 20px; }
+        }
+        @media (max-width: 480px) {
+            .sidebar { width: 100%; position: absolute; z-index: 50; height: 100vh; }
+            .chat-area { width: 100%; }
+            .notif-overlay { width: 95vw; right: 2.5vw; }
+        }
     </style>
 </head>
 <body>
@@ -485,9 +503,7 @@ socket.on('history', function(hist) {
 });
 
 socket.on('message_deleted', function(data) {
-    // Удаляем сообщение из DOM без всплывающего уведомления
     var msgs = document.querySelectorAll('.msg');
-    // Просто перезагружаем текущую комнату
     socket.emit('join', { room: currentRoom });
 });
 
