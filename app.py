@@ -283,6 +283,9 @@ def handle_auth(data):
         user_data.setdefault('requests', [])
         user_data.setdefault('notifications', [])
         user_sessions[un] = request.sid
+        user_data['online'] = True
+        user_data['last_seen'] = time.time()
+        save_user(un, user_data)
         emit('auth_result', {'success': True, 'user': user_data})
 
 @socketio.on('update_profile')
@@ -437,10 +440,21 @@ def handle_get_user_profile(data):
 
 @socketio.on('disconnect')
 def handle_disconnect():
+    users = load_users()
     for un, sid in list(user_sessions.items()):
         if sid == request.sid:
             del user_sessions[un]
+            if un in users:
+                users[un]['online'] = False
+                users[un]['last_seen'] = time.time()
+                save_user(un, users[un])
             break
+
+@socketio.on('typing')
+def handle_typing(data):
+    room = data.get('room', '')
+    if room.startswith('dm_'):
+        emit('user_typing', {'username': data.get('username'), 'user': data.get('user')}, room=room, include_self=False)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
