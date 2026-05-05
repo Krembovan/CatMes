@@ -111,7 +111,7 @@ def admin_panel():
     msgs = load_messages()
     msg_count = len(msgs)
     general_msgs = [m for m in msgs if m.get('room') == 'Общий']
-last_msgs = general_msgs[-10:] if general_msgs else []
+    last_msgs = general_msgs[-10:] if general_msgs else []
     last_msgs.reverse()
     
     users_list = []
