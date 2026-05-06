@@ -409,7 +409,6 @@ socket.on('user_profile', function(data) {
     var isRequester = u.requests && u.requests.indexOf(myData.username) !== -1;
     var roleNames = {'owner': '👑 Владелец', 'admin': '🛡️ Админ', 'moderator': '🛡️ Модер', 'user': '👤 Пользователь'};
     var roleClass = u.role === 'owner' ? 'color:#f59e0b;' : u.role === 'admin' ? 'color:#ef4444;' : u.role === 'moderator' ? 'color:#10b981;' : 'color:#94a3b8;';
-    
     var html = '<h2>👤 Профиль</h2>';
     html += '<img src="' + escapeHtml(u.avatar || '') + '" class="avatar-large" alt="Аватар">';
     html += '<div style="text-align:center; font-size:1.2rem; font-weight:700;">' + escapeHtml(u.display_name) + '</div>';
@@ -496,7 +495,11 @@ function renderMessage(msg) {
     var deleteBtn = canDelete ? '<span class="msg-delete-btn" onclick="event.stopPropagation();deleteMessage(\'' + msg.timestamp + '\')" title="Удалить">✕</span>' : '';
     var avatarHtml = '<img class="msg-avatar" src="' + escapeHtml(msg.avatar || '') + '" onerror="this.style.display=\'none\'" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;" title="Посмотреть профиль">';
     var authorHtml = isMy ? '' : '<div class="msg-author" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;color:var(--accent);" title="Посмотреть профиль">' + escapeHtml(msg.user) + '</div>';
-    div.innerHTML = avatarHtml + '<div class="msg-bubble">' + authorHtml + escapeHtml(msg.text) + deleteBtn + '</div>';
+    var statusHtml = '';
+    if (!isMy) {
+    statusHtml = '<div style="font-size:0.6rem;color:var(--text-secondary);" id="msgStatus_' + msg.username + '"></div>';
+}
+    div.innerHTML = avatarHtml + '<div class="msg-bubble">' + authorHtml + statusHtml + escapeHtml(msg.text) + deleteBtn + '</div>';
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
