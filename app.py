@@ -55,6 +55,12 @@ def notify_user(username, event, data):
         except:
             pass
 
+def notify_friends(username, event, data):
+    users = load_users()
+    if username in users:
+        for friend in users[username].get('friends', []):
+            notify_user(friend, event, data)
+
 @app.route('/')
 def index():
     from flask import render_template
@@ -90,6 +96,14 @@ def get_role(username):
         users[username.lower()]['role'] = role
         save_user(username.lower(), users[username.lower()])
     return role
+
+def get_last_seen(username):
+    users = load_users()
+    if username in users:
+        ts = users[username].get('last_seen', 0)
+        if ts:
+            return ts
+    return None
 
 @app.route('/admin')
 def admin_panel():
@@ -238,7 +252,6 @@ def admin_delete_msg(timestamp):
 @socketio.on('auth')
 def handle_auth(data):
     action = data.get('action', 'login')
-    # Убираем @ из username
     un = data.get('username', '').strip().lower().replace('@', '')
     dn = data.get('display_name', '').strip()
     pwd = data.get('password', '')
@@ -286,6 +299,7 @@ def handle_auth(data):
         user_data['online'] = True
         user_data['last_seen'] = time.time()
         save_user(un, user_data)
+        notify_friends(un, 'friend_online', {'username': un, 'online': True})
         emit('auth_result', {'success': True, 'user': user_data})
 
 @socketio.on('update_profile')
@@ -440,6 +454,12 @@ def handle_get_user_profile(data):
         }
     })
 
+@socketio.on('check_status')
+def handle_check_status(data):
+    un = data.get('username', '').lower()
+    online = un in user_sessions
+    emit('friend_online', {'username': un, 'online': online})
+
 @socketio.on('disconnect')
 def handle_disconnect():
     users = load_users()
@@ -450,6 +470,7 @@ def handle_disconnect():
                 users[un]['online'] = False
                 users[un]['last_seen'] = time.time()
                 save_user(un, users[un])
+                notify_friends(un, 'friend_online', {'username': un, 'online': False})
             break
 
 @socketio.on('typing')
