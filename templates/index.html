@@ -185,6 +185,20 @@ socket.on('incoming_call', async (d) => { if (confirm('📞 @' + d.from + ' зв
 socket.on('call_accepted', async (d) => { await peerConnection.setRemoteDescription(new RTCSessionDescription(d.sdp)); showToast('📞 Соединение установлено!', 'success'); });
 socket.on('call_signal', (d) => { if (d.ice) peerConnection.addIceCandidate(new RTCIceCandidate(d.ice)); });
 function hangUp() { if (peerConnection) { peerConnection.close(); peerConnection = null; } if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; } currentCallUser = null; }
+
+socket.on('new_dm', function(data) {
+    var notif = {
+        type: 'new_message',
+        from: data.from,
+        text: data.text,
+        timestamp: Date.now() / 1000,
+        read: false
+    };
+    notifications.unshift(notif);
+    updateBadge();
+    showToast('💬 @' + data.from + ': ' + data.text, 'info');
+});
+
 </script>
 </body>
 </html>

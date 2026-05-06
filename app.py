@@ -410,6 +410,12 @@ def handle_msg(data):
     data['timestamp'] = time.time()
     data['text'] = text
     save_message(data)
+        # Уведомление для личных чатов
+    if room.startswith('dm_'):
+        parts = room.split('_')
+        for p in parts[1:]:
+            if p != data.get('username', ''):
+                notify_user(p, 'new_dm', {'from': data.get('username'), 'text': text[:30], 'room': room})
     emit('message', data, room=room)
 
 @socketio.on('join')
