@@ -479,6 +479,19 @@ def handle_typing(data):
     if room.startswith('dm_'):
         emit('user_typing', {'username': data.get('username'), 'user': data.get('user')}, room=room, include_self=False)
 
+@socketio.on('call_user')
+def handle_call_user(data):
+    target = data.get('to')
+    notify_user(target, 'incoming_call', {'from': data.get('from', ''), 'sdp': data.get('sdp')})
+
+@socketio.on('call_accepted')
+def handle_call_accepted(data):
+    notify_user(data.get('to'), 'call_accepted', {'sdp': data.get('sdp')})
+
+@socketio.on('call_signal')
+def handle_call_signal(data):
+    notify_user(data.get('to'), 'call_signal', {'ice': data.get('ice')})
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     socketio.run(app, host='0.0.0.0', port=port)
