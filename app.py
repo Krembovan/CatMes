@@ -409,14 +409,26 @@ def handle_msg(data):
     data['room'] = room
     data['timestamp'] = time.time()
     data['text'] = text
+    data['read'] = False
     save_message(data)
-        # Уведомление для личных чатов
     if room.startswith('dm_'):
         parts = room.split('_')
         for p in parts[1:]:
             if p != data.get('username', ''):
                 notify_user(p, 'new_dm', {'from': data.get('username'), 'text': text[:30], 'room': room})
     emit('message', data, room=room)
+
+@socketio.on('mark_read')
+def handle_mark_read(data):
+    room = data.get('room', '')
+    username = data.get('username', '')
+    if room:
+        msgs = load_messages()
+        for m in msgs:
+            if m.get('room') == room and m.get('username') != username:
+                m['read'] = True
+        save_db('messages', msgs)
+        emit('messages_read', {'room': room, 'by': username}, room=room)
 
 @socketio.on('join')
 def on_join(data):
