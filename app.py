@@ -479,6 +479,13 @@ def handle_typing(data):
     if room.startswith('dm_'):
         emit('user_typing', {'username': data.get('username'), 'user': data.get('user')}, room=room, include_self=False)
 
+@socketio.on('get_avatar')
+def handle_get_avatar(data):
+    un = data.get('username', '').lower()
+    users = load_users()
+    if un in users:
+        emit('friend_avatar', {'username': un, 'avatar': users[un].get('avatar', '')})
+
 @socketio.on('call_user')
 def handle_call_user(data):
     target = data.get('to')
