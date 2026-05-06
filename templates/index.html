@@ -141,7 +141,7 @@ function updateBadge() { var total = (myData && myData.requests ? myData.request
 function renderNotifications() { var list = document.getElementById('notifList'); var reqs = (myData && myData.requests || []).map(function(un){ return { type: 'friend_request', from: un, text: '@' + un + ' хочет добавить вас в друзья', timestamp: Date.now() / 1000 }; }); var all = reqs.concat(notifications); if (all.length === 0) { list.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-secondary);">Нет уведомлений</div>'; return; } list.innerHTML = all.map(function(n){ var btns = ''; if (n.type === 'friend_request') { btns = '<div class="notif-actions"><button class="btn-sm primary" onclick="acceptFriend(\'' + n.from + '\');toggleNotifPanel();">✓ Принять</button><button class="btn-sm danger" onclick="declineFriend(\'' + n.from + '\');toggleNotifPanel();">✕ Отклонить</button></div>'; } return '<div class="notif-item"><div class="notif-text">' + escapeHtml(n.text) + '</div><div class="notif-time">' + new Date(n.timestamp * 1000).toLocaleString() + '</div>' + btns + '</div>'; }).join(''); }
 socket.on('new_notification', function(notif) { notifications.unshift(notif); updateBadge(); showToast(notif.text, 'info'); });
 
-function updateFriendList() { if (!myData) return; updateBadge(); var list = document.getElementById('friendList'); var html = ''; (myData.requests || []).forEach(function(un){ html += '<div class="friend-item" style="border:1px dashed var(--primary);"><div class="chat-avatar">👤</div><span style="flex:1;">@' + escapeHtml(un) + '</span><button class="badge-accept" onclick="event.stopPropagation();acceptFriend(\'' + escapeHtml(un) + '\')">✓ Принять</button></div>'; }); (myData.friends || []).forEach(function(un){ var avatarUrl = 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=' + un; html += '<div class="friend-item"><img class="chat-avatar" src="' + avatarUrl + '" style="object-fit:cover;border-radius:12px;" onclick="event.stopPropagation();viewProfile(\'' + escapeHtml(un) + '\')"><span style="flex:1;" onclick="startDM(\'' + escapeHtml(un) + '\')"><span style="font-weight:600;">@' + escapeHtml(un) + '</span><span id="status_' + un + '" style="display:block;font-size:0.65rem;color:var(--text-secondary);"></span></span><span class="friend-remove-btn" onclick="event.stopPropagation();removeFriend(\'' + escapeHtml(un) + '\')">✕</span></div>'; }); if (!html) html = '<div style="padding:10px;color:var(--text-secondary);font-size:0.8rem;">Нет друзей</div>'; list.innerHTML = html; (myData.friends || []).forEach(function(un){ socket.emit('check_status', { username: un }); }); }
+function updateFriendList() { if (!myData) return; updateBadge(); var list = document.getElementById('friendList'); var html = ''; (myData.requests || []).forEach(function(un){ html += '<div class="friend-item" style="border:1px dashed var(--primary);"><div class="chat-avatar">👤</div><span style="flex:1;">@' + escapeHtml(un) + '</span><button class="badge-accept" onclick="event.stopPropagation();acceptFriend(\'' + escapeHtml(un) + '\')">✓ Принять</button></div>'; }); (myData.friends || []).forEach(function(un){ var avatarUrl = 'https://ui-avatars.com/api/?name=' + un + '&background=7c5cfc&color=fff&size=40'; html += '<div class="friend-item"><img class="chat-avatar" src="' + avatarUrl + '" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';" style="object-fit:cover;border-radius:12px;width:38px;height:38px;"><div class="chat-avatar" style="display:none;">🔵</div><span style="flex:1;" onclick="startDM(\'' + escapeHtml(un) + '\')"><span style="font-weight:600;">@' + escapeHtml(un) + '</span><span id="status_' + un + '" style="display:block;font-size:0.65rem;color:var(--text-secondary);"></span></span><span class="friend-remove-btn" onclick="event.stopPropagation();removeFriend(\'' + escapeHtml(un) + '\')">✕</span></div>'; }); if (!html) html = '<div style="padding:10px;color:var(--text-secondary);font-size:0.8rem;">Нет друзей</div>'; list.innerHTML = html; (myData.friends || []).forEach(function(un){ socket.emit('check_status', { username: un }); }); }
 
 socket.on('friend_online', function(data) { var statusEl = document.getElementById('status_' + data.username); if (statusEl) { statusEl.textContent = data.online ? '🟢 Онлайн' : '⚫ Оффлайн'; } });
 
@@ -165,7 +165,7 @@ function switchRoom(roomId) { currentRoom = roomId; document.getElementById('mes
 function goBack() { document.getElementById('sidebar').classList.remove('hidden'); }
 function sendMsg() { var input = document.getElementById('msgInput'); var text = input.value.trim(); if (!text || !myData) return; socket.emit('message', { room: currentRoom, text: text, user: myData.display_name, username: myData.username, avatar: myData.avatar }); input.value = ''; }
 function deleteMessage(msgId) { if (!confirm('Удалить сообщение?')) return; socket.emit('delete_message', { msg_id: msgId, username: myData.username }); }
-function renderMessage(msg) { var box = document.getElementById('messages'); if (box.querySelector('.empty-chat')) box.innerHTML = ''; var isMy = msg.username === (myData ? myData.username : ''); var div = document.createElement('div'); div.className = 'msg' + (isMy ? ' my' : ''); var canDelete = myData && (myData.role === 'owner' || myData.role === 'admin' || myData.role === 'moderator'); var deleteBtn = canDelete ? '<span class="msg-delete-btn" onclick="event.stopPropagation();deleteMessage(\'' + msg.timestamp + '\')" title="Удалить">✕</span>' : ''; var avatarHtml = '<img class="msg-avatar" src="' + escapeHtml(msg.avatar || '') + '" onerror="this.style.display=\'none\'" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;" title="Посмотреть профиль">'; var authorHtml = isMy ? '' : '<div class="msg-author" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;color:var(--accent);" title="Посмотреть профиль">' + escapeHtml(msg.user) + '</div>'; div.innerHTML = avatarHtml + '<div class="msg-bubble">' + authorHtml + escapeHtml(msg.text) + deleteBtn + '</div>'; box.appendChild(div); box.scrollTop = box.scrollHeight; }
+function renderMessage(msg) { var box = document.getElementById('messages'); if (box.querySelector('.empty-chat')) box.innerHTML = ''; var isMy = msg.username === (myData ? myData.username : ''); var div = document.createElement('div'); div.className = 'msg' + (isMy ? ' my' : ''); var canDelete = myData && (myData.role === 'owner' || myData.role === 'admin' || myData.role === 'moderator'); var deleteBtn = canDelete ? '<span class="msg-delete-btn" onclick="event.stopPropagation();deleteMessage(\'' + msg.timestamp + '\')" title="Удалить">✕</span>' : ''; var avatarUrl = 'https://ui-avatars.com/api/?name=' + msg.username + '&background=7c5cfc&color=fff&size=40'; var avatarHtml = '<img class="msg-avatar" src="' + escapeHtml(msg.avatar || avatarUrl) + '" onerror="this.src=\'' + avatarUrl + '\'" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;" title="Посмотреть профиль">'; var authorHtml = isMy ? '' : '<div class="msg-author" onclick="viewProfile(\'' + escapeHtml(msg.username) + '\')" style="cursor:pointer;color:var(--accent);" title="Посмотреть профиль">' + escapeHtml(msg.user) + '</div>'; div.innerHTML = avatarHtml + '<div class="msg-bubble">' + authorHtml + escapeHtml(msg.text) + deleteBtn + '</div>'; box.appendChild(div); box.scrollTop = box.scrollHeight; }
 
 var typingTimer; document.getElementById('msgInput').addEventListener('input', function() { if (currentRoom.startsWith('dm_')) { socket.emit('typing', { room: currentRoom, username: myData.username, user: myData.display_name }); } });
 socket.on('user_typing', function(data) { document.getElementById('chatHeader').textContent = '💬 @' + dmUser + ' (печатает...)'; clearTimeout(typingTimer); typingTimer = setTimeout(function() { document.getElementById('chatHeader').textContent = '💬 @' + dmUser; }, 1000); });
@@ -181,67 +181,16 @@ let localStream = null;
 let peerConnection = null;
 let currentCallUser = null;
 
-const rtcConfig = {
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-};
+const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-async function startCall(un) {
-    currentCallUser = un;
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        peerConnection = new RTCPeerConnection(rtcConfig);
-        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-        
-        peerConnection.onicecandidate = (e) => {
-            if (e.candidate) {
-                socket.emit('call_signal', { to: un, ice: e.candidate });
-            }
-        };
-        
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        socket.emit('call_user', { to: un, sdp: offer });
-        
-        showToast('📞 Звоним @' + un, 'info');
-    } catch(e) {
-        showToast('Ошибка микрофона', 'error');
-    }
-}
+async function startCall(un) { currentCallUser = un; try { localStream = await navigator.mediaDevices.getUserMedia({ audio: true }); peerConnection = new RTCPeerConnection(rtcConfig); localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream)); peerConnection.onicecandidate = (e) => { if (e.candidate) { socket.emit('call_signal', { to: un, ice: e.candidate }); } }; const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer); socket.emit('call_user', { to: un, sdp: offer }); showToast('📞 Звоним @' + un, 'info'); } catch(e) { showToast('Ошибка микрофона', 'error'); } }
 
-socket.on('incoming_call', async (data) => {
-    if (confirm('📞 @' + data.from + ' звонит! Принять?')) {
-        currentCallUser = data.from;
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        peerConnection = new RTCPeerConnection(rtcConfig);
-        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-        
-        peerConnection.onicecandidate = (e) => {
-            if (e.candidate) socket.emit('call_signal', { to: data.from, ice: e.candidate });
-        };
-        
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('call_accepted', { to: data.from, sdp: answer });
-    } else {
-        socket.emit('call_rejected', { to: data.from });
-    }
-});
+socket.on('incoming_call', async (data) => { if (confirm('📞 @' + data.from + ' звонит! Принять?')) { currentCallUser = data.from; localStream = await navigator.mediaDevices.getUserMedia({ audio: true }); peerConnection = new RTCPeerConnection(rtcConfig); localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream)); peerConnection.onicecandidate = (e) => { if (e.candidate) socket.emit('call_signal', { to: data.from, ice: e.candidate }); }; await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer); socket.emit('call_accepted', { to: data.from, sdp: answer }); } else { socket.emit('call_rejected', { to: data.from }); } });
 
-socket.on('call_accepted', async (data) => {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-    showToast('📞 Соединение установлено!', 'success');
-});
+socket.on('call_accepted', async (data) => { await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)); showToast('📞 Соединение установлено!', 'success'); });
+socket.on('call_signal', (data) => { if (data.ice) peerConnection.addIceCandidate(new RTCIceCandidate(data.ice)); });
 
-socket.on('call_signal', (data) => {
-    if (data.ice) peerConnection.addIceCandidate(new RTCIceCandidate(data.ice));
-});
-
-function hangUp() {
-    if (peerConnection) { peerConnection.close(); peerConnection = null; }
-    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-    currentCallUser = null;
-}
+function hangUp() { if (peerConnection) { peerConnection.close(); peerConnection = null; } if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; } currentCallUser = null; }
 </script>
 </body>
 </html>
