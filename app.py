@@ -83,7 +83,7 @@ def sync_roles():
     for un in users:
         if un in ROLES:
             users[un]['role'] = ROLES[un]
-        elif 'role' not in users[un]:
+        if 'role' not in users[un]:
             users[un]['role'] = 'user'
     save_db('users', users)
 
