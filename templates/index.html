@@ -6,115 +6,149 @@
     <title>CAT Messenger</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        :root { --bg: #0d1117; --surf: #161b22; --prim: #7c5cfc; --text: #e2e8f0; --sec: #94a3b8; --brd: rgba(255,255,255,0.06); }
-        * { margin:0; padding:0; box-sizing:border-box; font-family: 'Segoe UI', sans-serif; }
-        body { background:#090c12; color:var(--text); height:100vh; overflow:hidden; }
-        .btn { padding:12px; border-radius:12px; border:none; cursor:pointer; font-weight:600; transition:0.2s; width:100%; margin-bottom:8px; }
-        .btn-p { background:var(--prim); color:#fff; }
-        .btn-s { background:transparent; color:var(--text); border:1px solid var(--brd); }
-        .input { width:100%; padding:12px; background:var(--surf); border:1px solid var(--brd); border-radius:10px; color:#fff; outline:none; margin-bottom:12px; }
-        .app { display:flex; height:100vh; }
-        .side { width:320px; background:var(--bg); border-right:1px solid var(--brd); display:flex; flex-direction:column; }
-        .main { flex:1; display:flex; flex-direction:column; min-width:0; }
-        .item { display:flex; align-items:center; gap:12px; padding:10px 15px; border-radius:12px; cursor:pointer; color:var(--sec); }
-        .item:hover, .item.active { background:var(--surf); color:#fff; }
-        .av { width:38px; height:38px; border-radius:10px; object-fit:cover; background:var(--surf); }
-        #msgs { flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
-        .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); display:none; align-items:center; justify-content:center; z-index:100; }
-        .overlay.active { display:flex; }
-        .modal { background:var(--bg); padding:30px; border-radius:24px; width:400px; border:1px solid var(--brd); }
-        .msg { display:flex; gap:10px; max-width:80%; margin-bottom:5px; }
+        :root { 
+            --bg: #090c10; --surf: #161b22; --prim: #7c5cfc; --prim-glow: rgba(124, 92, 252, 0.4);
+            --text: #f0f6fc; --sec: #8b949e; --brd: rgba(255, 255, 255, 0.1); 
+        }
+        * { margin:0; padding:0; box-sizing:border-box; font-family: 'Inter', -apple-system, sans-serif; }
+        body { background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+        
+        /* Стилизация скроллбара */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: var(--brd); border-radius: 10px; }
+
+        /* Кнопки и Инпуты */
+        .btn { padding:12px; border-radius:14px; border:none; cursor:pointer; font-weight:600; transition:0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-p { background: var(--prim); color: #fff; box-shadow: 0 4px 15px var(--prim-glow); }
+        .btn-p:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--prim-glow); }
+        .btn-s { background: var(--surf); color: var(--text); border: 1px solid var(--brd); }
+        .btn-s:hover { background: rgba(255,255,255,0.05); }
+        
+        .input { width:100%; padding:14px; background:var(--surf); border:1px solid var(--brd); border-radius:12px; color:#fff; outline:none; transition: 0.2s; }
+        .input:focus { border-color: var(--prim); box-shadow: 0 0 0 2px var(--prim-glow); }
+
+        /* Layout */
+        .app { display:flex; height:100vh; background: radial-gradient(circle at top right, #161b22, #090c10); }
+        .side { width:300px; background: rgba(13, 17, 23, 0.7); backdrop-filter: blur(10px); border-right:1px solid var(--brd); display:flex; flex-direction:column; }
+        .main { flex:1; display:flex; flex-direction:column; min-width:0; background: transparent; }
+        
+        /* Списки */
+        .item { display:flex; align-items:center; gap:12px; padding:12px 16px; border-radius:14px; cursor:pointer; margin: 2px 8px; transition: 0.2s; color: var(--sec); }
+        .item:hover, .item.active { background: var(--surf); color: #fff; }
+        .av { width:40px; height:40px; border-radius:12px; object-fit:cover; background: var(--surf); border: 1px solid var(--brd); }
+
+        /* Чат */
+        #msgs { flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; }
+        .msg { display:flex; gap:12px; max-width:75%; animation: fadeIn 0.3s ease; }
         .msg.my { align-self:flex-end; flex-direction:row-reverse; }
-        .bubble { padding:10px 15px; border-radius:15px; background:var(--surf); font-size:0.9rem; position:relative; }
-        .my .bubble { background:var(--prim); }
-        .badge { background:red; color:#fff; border-radius:50%; padding:2px 6px; font-size:0.7rem; position:absolute; top:10px; right:10px; display:none; }
-        .badge.show { display:block; }
+        .bubble { padding:12px 16px; border-radius:18px; background: var(--surf); font-size:0.95rem; line-height: 1.4; border: 1px solid var(--brd); }
+        .my .bubble { background: var(--prim); border: none; color: #fff; border-bottom-right-radius: 4px; }
+        .not-my .bubble { border-bottom-left-radius: 4px; }
+
+        /* Модалки и Панели */
+        .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(8px); display:none; align-items:center; justify-content:center; z-index:100; opacity:0; transition: 0.3s; }
+        .overlay.active { display:flex; opacity:1; }
+        .modal { background:var(--bg); padding:32px; border-radius:28px; width:380px; border:1px solid var(--brd); box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+        
+        .notif-panel { position: absolute; top: 70px; left: 20px; width: 280px; background: var(--surf); border: 1px solid var(--brd); border-radius: 18px; display: none; flex-direction: column; z-index: 90; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .notif-panel.active { display: flex; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
-    <div id="toast" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:1000;background:var(--prim);padding:10px 20px;border-radius:10px;display:none;"></div>
+    <div id="toast" style="position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:1000; display:none; background:var(--prim); padding:12px 24px; border-radius:12px; font-weight:600; box-shadow: 0 10px 20px rgba(0,0,0,0.3);"></div>
 
     <div id="auth" class="overlay active">
         <div class="modal">
-            <h2 style="text-align:center;margin-bottom:20px;">😸 CAT</h2>
-            <input id="uInp" class="input" placeholder="Логин">
+            <h2 style="text-align:center; margin-bottom:24px; font-size: 1.8rem;">😸 CAT</h2>
+            <input id="uInp" class="input" placeholder="Логин" autocomplete="off">
             <input id="pInp" class="input" type="password" placeholder="Пароль">
-            <button class="btn btn-p" id="loginBtn">Войти</button>
-            <p style="text-align:center;font-size:0.8rem;cursor:pointer;opacity:0.6" id="switchAuth">Нет аккаунта? Создать</p>
+            <button class="btn btn-p" id="loginBtn" style="width:100%">Войти</button>
+            <p id="switchAuth" style="text-align:center; font-size:0.85rem; margin-top:20px; opacity:0.5; cursor:pointer">Нет аккаунта? Создать</p>
         </div>
     </div>
 
     <div class="app" id="app" style="display:none;">
         <div class="side">
-            <div style="padding:20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--brd);">
-                <b style="color:var(--prim)">CAT</b>
-                <div style="display:flex;gap:10px;">
-                    <button class="btn-s" style="width:34px;height:34px;border-radius:50%" onclick="mod('#addF',1)">+</button>
-                    <button class="btn-s" style="width:34px;height:34px;border-radius:50%" onclick="mod('#prof',1)">👤</button>
+            <div style="padding:20px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--brd);">
+                <b style="color:var(--prim); font-size:1.2rem; letter-spacing:1px;">CAT</b>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn-s" style="width:38px; height:38px; border-radius:12px;" onclick="document.getElementById('notif').classList.toggle('active')">🔔</button>
+                    <button class="btn-s" style="width:38px; height:38px; border-radius:12px;" onclick="mod('#addF',1)">+</button>
+                    <button class="btn-s" style="width:38px; height:38px; border-radius:12px;" onclick="mod('#prof',1)">👤</button>
                 </div>
             </div>
-            <div style="flex:1;overflow-y:auto;padding:10px;">
+            
+            <div id="notif" class="notif-panel">
+                <div style="padding:15px; border-bottom:1px solid var(--brd); font-weight:600; font-size:0.9rem;">Уведомления</div>
+                <div id="notifList" style="padding:10px; max-height:300px; overflow-y:auto;">
+                    <div style="text-align:center; padding:20px; color:var(--sec); font-size:0.8rem;">Нет новых уведомлений</div>
+                </div>
+            </div>
+
+            <div style="flex:1; overflow-y:auto; padding-top:10px;">
                 <div id="rooms"><div class="item active" data-room="Общий">🌍 Общий канал</div></div>
-                <p style="font-size:0.7rem;color:var(--sec);margin:15px 10px 5px;">ДРУЗЬЯ</p>
+                <p style="font-size:0.7rem; color:var(--sec); margin:20px 0 8px 20px; font-weight:700; letter-spacing:1px;">ДРУЗЬЯ</p>
                 <div id="flist"></div>
             </div>
         </div>
+
         <div class="main">
-            <div style="padding:15px 20px;border-bottom:1px solid var(--brd);display:flex;justify-content:space-between;align-items:center;">
-                <b id="h"># Общий канал</b>
-                <div id="callZone" style="display:none;"><button class="btn-p" style="padding:5px 15px;" id="callBtn">📞 Позвонить</button></div>
+            <div style="padding:18px 25px; border-bottom:1px solid var(--brd); display:flex; justify-content:space-between; align-items:center; backdrop-filter:blur(10px);">
+                <b id="h" style="font-size:1.1rem;"># Общий канал</b>
+                <button id="callBtn" class="btn btn-p" style="padding:8px 16px; display:none; font-size:0.85rem;">📞 Позвонить</button>
             </div>
             <div id="msgs"></div>
-            <div style="padding:20px;display:flex;gap:10px;background:var(--bg)">
-                <input id="mInp" class="input" style="margin:0" placeholder="Сообщение...">
-                <button class="btn-p" id="send" style="width:50px;margin:0">➤</button>
+            <div style="padding:20px; display:flex; gap:12px; border-top: 1px solid var(--brd);">
+                <input id="mInp" class="input" style="margin:0" placeholder="Напишите сообщение...">
+                <button id="send" class="btn btn-p" style="width:50px; margin:0; border-radius:14px;">➤</button>
             </div>
         </div>
     </div>
 
-    <div id="prof" class="overlay"><div class="modal">
-        <h2>👤 Профиль</h2>
-        <input id="p_name" class="input" placeholder="Имя">
-        <textarea id="p_bio" class="input" placeholder="О себе"></textarea>
-        <button class="btn btn-p" id="saveP">Сохранить</button>
-        <button class="btn btn-s" id="logout" style="color:red">Выйти</button>
-        <button class="btn btn-s" onclick="mod('#prof',0)">Закрыть</button>
+    <div id="addF" class="overlay"><div class="modal">
+        <h2 style="margin-bottom:20px">Добавить друга</h2>
+        <input id="fSearch" class="input" placeholder="@username">
+        <button class="btn btn-p" id="sendFReq" style="width:100%">Отправить запрос</button>
+        <button class="btn btn-s" onclick="mod('#addF',0)" style="width:100%">Отмена</button>
     </div></div>
 
-    <div id="addF" class="overlay"><div class="modal">
-        <h2>➕ Добавить друга</h2>
-        <input id="fSearch" class="input" placeholder="@username">
-        <button class="btn btn-p" id="sendFReq">Отправить запрос</button>
-        <button class="btn btn-s" onclick="mod('#addF',0)">Отмена</button>
+    <div id="prof" class="overlay"><div class="modal">
+        <h2 style="margin-bottom:20px">Профиль</h2>
+        <input id="p_name" class="input" placeholder="Ваше имя">
+        <textarea id="p_bio" class="input" placeholder="О себе..." style="height:80px; resize:none;"></textarea>
+        <button class="btn btn-p" id="saveP" style="width:100%">Сохранить</button>
+        <button class="btn btn-s" id="logout" style="width:100%; color:#ff4d4d">Выйти из аккаунта</button>
+        <button class="btn btn-s" onclick="mod('#prof',0)" style="width:100%">Закрыть</button>
     </div></div>
 
     <script>
         const $ = s => document.querySelector(s), socket = io();
-        let state = { me: null, room: 'Общий', dmu: null, pc: null, stream: null };
+        let state = { me: null, room: 'Общий', dmu: null };
 
         const mod = (id, open) => $(id).classList[open?'add':'remove']('active');
         const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-        const toast = (m) => { const e = $('#toast'); e.textContent = m; e.style.display = 'block'; setTimeout(() => e.style.display='none', 3000); };
+        const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; setTimeout(()=>e.style.display='none',3000); };
 
-        // --- Auth Logic (Auto-login) ---
         const login = (u, p) => {
+            if(!u || !p) return;
             localStorage.setItem('cat_u', u); localStorage.setItem('cat_p', p);
             socket.emit('auth', { action: 'login', username: u, password: p });
         };
 
         window.onload = () => {
-            const u = localStorage.getItem('cat_u'), p = localStorage.getItem('cat_p');
-            if (u && p) login(u, p);
+            const u=localStorage.getItem('cat_u'), p=localStorage.getItem('cat_p');
+            if(u && p) login(u, p);
         };
 
-        // --- UI & Rendering ---
         const renderMsg = m => {
             const isMy = m.username === state.me?.username;
             $('#msgs').insertAdjacentHTML('beforeend', `
-                <div class="msg ${isMy?'my':''}">
-                    <img class="av" src="${m.avatar || 'https://ui-avatars.com/api/?name='+m.username}">
+                <div class="msg ${isMy?'my':'not-my'}">
+                    <img class="av" src="${m.avatar || 'https://ui-avatars.com/api/?name='+m.username+'&background=random'}">
                     <div class="bubble">
-                        ${isMy?'':`<div style="color:var(--prim);font-weight:700;font-size:0.7rem">${esc(m.user)}</div>`}
+                        ${isMy?'':`<div style="color:var(--prim); font-weight:800; font-size:0.7rem; margin-bottom:4px;">${esc(m.user)}</div>`}
                         ${esc(m.text)}
                     </div>
                 </div>`);
@@ -128,43 +162,35 @@
                     <img class="av" src="https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${f}">
                     <span>@${f}</span>
                 </div>`).join('');
-            // Рендер заявок в друзья
-            (state.me.requests || []).forEach(r => toast(`Запрос от @${r}`));
+            
+            const reqs = state.me.requests || [];
+            if(reqs.length) {
+                $('#notifList').innerHTML = reqs.map(r => `
+                    <div style="background:var(--bg); padding:12px; border-radius:12px; margin-bottom:8px; border:1px solid var(--brd);">
+                        <div style="font-size:0.8rem; margin-bottom:8px;">Запрос от <b>@${r}</b></div>
+                        <button class="btn btn-p" style="padding:6px; font-size:0.7rem;" onclick="socket.emit('accept_friend',{my_username:state.me.username,target_username:'${r}'})">Принять</button>
+                    </div>`).join('');
+            }
         };
 
-        // --- Event Delegation ---
         document.addEventListener('click', e => {
             const t = e.target, r = t.closest('[data-room]')?.dataset.room, dm = t.closest('[data-dm]')?.dataset.dm;
-            if(r) { state.room = r; state.dmu = null; $('#h').textContent = '# '+r; $('#callZone').style.display='none'; $('#msgs').innerHTML = ''; socket.emit('join', {room:r}); }
-            if(dm) { state.dmu = dm; const p = [state.me.username, dm].sort(); state.room = `dm_${p[0]}_${p[1]}`; $('#h').textContent = '@'+dm; $('#callZone').style.display='block'; $('#msgs').innerHTML = ''; socket.emit('join', {room:state.room}); }
+            if(r) { state.room=r; state.dmu=null; $('#h').textContent='# '+r; $('#callBtn').style.display='none'; $('#msgs').innerHTML=''; socket.emit('join',{room:r}); }
+            if(dm) { state.dmu=dm; const p=[state.me.username, dm].sort(); state.room=`dm_${p[0]}_${p[1]}`; $('#h').textContent='@'+dm; $('#callBtn').style.display='block'; $('#msgs').innerHTML=''; socket.emit('join',{room:state.room}); }
             if(t.id === 'loginBtn') login($('#uInp').value, $('#pInp').value);
-            if(t.id === 'send') { const val = $('#mInp').value.trim(); if(val) { socket.emit('message', { room: state.room, text: val, user: state.me.display_name, username: state.me.username }); $('#mInp').value = ''; } }
-            if(t.id === 'sendFReq') { socket.emit('send_friend_request', { my_username: state.me.username, target_username: $('#fSearch').value.replace('@','') }); mod('#addF', 0); }
+            if(t.id === 'send') { const v=$('#mInp').value.trim(); if(v){ socket.emit('message',{room:state.room, text:v, user:state.me.display_name, username:state.me.username}); $('#mInp').value=''; } }
+            if(t.id === 'sendFReq') { socket.emit('send_friend_request',{my_username:state.me.username, target_username:$('#fSearch').value.replace('@','')}); mod('#addF',0); toast('Запрос отправлен'); }
             if(t.id === 'logout') { localStorage.clear(); location.reload(); }
-            if(t.id === 'callBtn') startCall(state.dmu);
             if(t.classList.contains('overlay')) mod(t, 0);
         });
 
-        // --- WebRTC (Base) ---
-        async function startCall(u) {
-            toast(`Звоним @${u}...`);
-            state.stream = await navigator.mediaDevices.getUserMedia({audio:true});
-            state.pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-            state.stream.getTracks().forEach(t => state.pc.addTrack(t, state.stream));
-            const offer = await state.pc.createOffer();
-            await state.pc.setLocalDescription(offer);
-            socket.emit('call_user', {to:u, sdp:offer});
-        }
-
-        // --- Sockets ---
         socket.on('auth_result', d => {
-            if(d.success) { state.me = d.user; $('#auth').classList.remove('active'); $('#app').style.display='flex'; updateUI(); }
+            if(d.success) { state.me=d.user; $('#auth').classList.remove('active'); $('#app').style.display='flex'; updateUI(); }
             else { toast(d.error); localStorage.clear(); }
         });
         socket.on('message', renderMsg);
-        socket.on('history', h => { $('#msgs').innerHTML = ''; h.forEach(renderMsg); });
-        socket.on('incoming_call', d => confirm(`Звонок от @${d.from}. Принять?`) && socket.emit('call_accepted', {to:d.from}));
-
+        socket.on('history', h => { $('#msgs').innerHTML=''; h.forEach(renderMsg); });
+        
         $('#mInp').onkeypress = e => e.key === 'Enter' && $('#send').click();
     </script>
 </body>
