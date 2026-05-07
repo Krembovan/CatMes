@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 
-import json, os, time
+import json, os, time, shutil
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room
 
@@ -9,10 +9,22 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'cat_secure_2024'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-DATA_DIR = '/tmp/cat_data'
+# Хранилище в /opt/cat_data (постоянное, не /tmp)
+DATA_DIR = '/opt/cat_data' if os.path.exists('/opt') else '/tmp/cat_data'
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# Бекап при старте
+BACKUP_DIR = os.path.join(DATA_DIR, 'backups')
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
 user_sessions = {}
+
+def backup_db():
+    for key in ['users', 'messages']:
+        path = os.path.join(DATA_DIR, f'{key}.json')
+        if os.path.exists(path):
+            backup_path = os.path.join(BACKUP_DIR, f'{key}_{int(time.time())}.json')
+            shutil.copy2(path, backup_path)
 
 def load_db(key):
     path = os.path.join(DATA_DIR, f'{key}.json')
@@ -28,6 +40,8 @@ def save_db(key, data):
     path = os.path.join(DATA_DIR, f'{key}.json')
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+backup_db()
 
 def load_users():
     return load_db('users')
@@ -60,6 +74,9 @@ def notify_friends(username, event, data):
     if username in users:
         for friend in users[username].get('friends', []):
             notify_user(friend, event, data)
+
+def get_online_users():
+    return list(user_sessions.keys())
 
 @app.route('/')
 def index():
@@ -96,14 +113,6 @@ def get_role(username):
         users[username.lower()]['role'] = role
         save_user(username.lower(), users[username.lower()])
     return role
-
-def get_last_seen(username):
-    users = load_users()
-    if username in users:
-        ts = users[username].get('last_seen', 0)
-        if ts:
-            return ts
-    return None
 
 @app.route('/admin')
 def admin_panel():
@@ -382,6 +391,11 @@ def handle_remove_friend(data):
     if target_un in users and my_un in users[target_un].get('friends', []):
         users[target_un]['friends'].remove(my_un)
         save_user(target_un, users[target_un])
+    # Удаляем историю личного чата
+    msgs = load_messages()
+    room = f"dm_{min(my_un, target_un)}_{max(my_un, target_un)}"
+    msgs = [m for m in msgs if m.get('room') != room]
+    save_db('messages', msgs)
     emit('auth_result', {'success': True, 'user': users[my_un]})
     notify_user(target_un, 'friend_removed_notify', {'user': users.get(target_un), 'by': my_un})
 
@@ -424,11 +438,14 @@ def handle_mark_read(data):
     username = data.get('username', '')
     if room:
         msgs = load_messages()
+        updated = False
         for m in msgs:
-            if m.get('room') == room and m.get('username') != username:
+            if m.get('room') == room and m.get('username') != username and not m.get('read'):
                 m['read'] = True
-        save_db('messages', msgs)
-        emit('messages_read', {'room': room, 'by': username}, room=room)
+                updated = True
+        if updated:
+            save_db('messages', msgs)
+            emit('messages_read', {'room': room, 'by': username}, room=room)
 
 @socketio.on('join')
 def on_join(data):
@@ -467,8 +484,8 @@ def handle_get_user_profile(data):
             'requests': user.get('requests', []),
             'role': role,
             'role_name': role_names.get(role, 'Пользователь'),
-            'online': user.get('online', False),
-            'last_seen': user.get('last_seen', 0)
+            'online': target_un in user_sessions,
+            'last_seen': user.get('last_seen', time.time())
         }
     })
 
@@ -503,6 +520,21 @@ def handle_get_avatar(data):
     users = load_users()
     if un in users:
         emit('friend_avatar', {'username': un, 'avatar': users[un].get('avatar', '')})
+
+@socketio.on('reset_password')
+def handle_reset_password(data):
+    un = data.get('username', '').strip().lower()
+    new_pwd = data.get('new_password', '')
+    users = load_users()
+    if un not in users:
+        emit('reset_result', {'success': False, 'error': 'Пользователь не найден'})
+        return
+    if len(new_pwd) < 4:
+        emit('reset_result', {'success': False, 'error': 'Пароль: минимум 4 символа'})
+        return
+    users[un]['pass'] = new_pwd
+    save_user(un, users[un])
+    emit('reset_result', {'success': True, 'message': 'Пароль изменён! Войдите с новым паролем.'})
 
 @socketio.on('call_user')
 def handle_call_user(data):
