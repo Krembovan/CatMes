@@ -25,21 +25,49 @@ def backup_db():
         if os.path.exists(path):
             backup_path = os.path.join(BACKUP_DIR, f'{key}_{int(time.time())}.json')
             shutil.copy2(path, backup_path)
+            print(f"📦 Бекап создан: {backup_path}")
+        else:
+            print(f"⚠️ Файл {path} не найден, пропускаю бекап")
 
 def load_db(key):
     path = os.path.join(DATA_DIR, f'{key}.json')
     if os.path.exists(path):
         try:
             with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            pass
+                data = json.load(f)
+            if key == 'users' and not isinstance(data, dict):
+                raise ValueError("users.json повреждён")
+            if key == 'messages' and not isinstance(data, list):
+                raise ValueError("messages.json повреждён")
+            return data
+        except Exception as e:
+            print(f"❌ Ошибка загрузки {key}.json: {e}")
+            backups = sorted(
+                [f for f in os.listdir(BACKUP_DIR) if f.startswith(key)],
+                reverse=True
+            )
+            for backup_file in backups:
+                try:
+                    with open(os.path.join(BACKUP_DIR, backup_file), 'r', encoding='utf-8') as f:
+                        restored = json.load(f)
+                    print(f"✅ Восстановлено из бекапа: {backup_file}")
+                    save_db(key, restored)
+                    return restored
+                except:
+                    continue
     return [] if key == 'messages' else {}
 
 def save_db(key, data):
     path = os.path.join(DATA_DIR, f'{key}.json')
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    tmp_path = path + '.tmp'
+    try:
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, path)
+    except Exception as e:
+        print(f"❌ Ошибка сохранения {key}.json: {e}")
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 backup_db()
 
@@ -549,6 +577,20 @@ def handle_call_accepted(data):
 def handle_call_signal(data):
     notify_user(data.get('to'), 'call_signal', {'ice': data.get('ice')})
 
+
+# Авто-бекап каждые 15 минут
+import threading
+
+def auto_backup():
+    while True:
+        time.sleep(900)
+        try:
+            backup_db()
+        except Exception as e:
+            print(f"⚠️ Ошибка авто-бекапа: {e}")
+
+backup_thread = threading.Thread(target=auto_backup, daemon=True)
+backup_thread.start()
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     socketio.run(app, host='0.0.0.0', port=port)
