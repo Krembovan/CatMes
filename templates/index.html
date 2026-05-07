@@ -111,7 +111,20 @@
         const $ = s => document.querySelector(s), socket = io();
         let state = { me: null, room: 'Общий' };
 
-        const mod = (id, open) => $(id).classList[open?'add':'remove']('active');
+        const mod = (id, open) => {
+    const el = $(id);
+    if (open) {
+        el.classList.add('active');
+        // Если открываем СВОИ настройки, подставляем текущие данные в поля
+        if (id === '#myProf' && state.me) {
+            $('#p_name').value = state.me.display_name || '';
+            $('#p_bio').value = state.me.bio || '';
+            $('#p_av').value = state.me.avatar || '';
+        }
+    } else {
+        el.classList.remove('active');
+    }
+};
         const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
         
         const login = (u, p) => {
@@ -155,9 +168,17 @@
             if(dm) { const p=[state.me.username, dm].sort(); state.room=`dm_${p[0]}_${p[1]}`; $('#h').textContent='@'+dm; $('#msgs').innerHTML=''; socket.emit('join',{room:state.room}); }
             if(t.id === 'loginBtn') login($('#uInp').value, $('#pInp').value);
             if(t.id === 'send') { const v=$('#mInp').value.trim(); if(v){ socket.emit('message',{room:state.room, text:v, user:state.me.display_name, username:state.me.username, avatar:state.me.avatar}); $('#mInp').value=''; } }
-            if(t.id === 'saveP') socket.emit('update_profile', { username: state.me.username, display_name: $('#p_name').value, bio: $('#p_bio').value, avatar: $('#p_av').value });
+            if(t.id === 'saveP') {
+    socket.emit('update_profile', { 
+        username: state.me.username, 
+        display_name: $('#p_name').value, 
+        bio: $('#p_bio').value, 
+        avatar: $('#p_av').value 
+    });
+    mod('#myProf', 0); // ЗАКРЫВАЕМ ОКНО
+}
             if(t.id === 'logout') { localStorage.clear(); location.reload(); }
-            if(t.classList.contains('overlay')) mod(t, 0);
+            if(t.classList.contains('overlay')) t.classList.remove('active');
         });
 
         socket.on('auth_result', d => {

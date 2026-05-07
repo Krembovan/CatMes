@@ -153,8 +153,9 @@ def handle_msg(data):
 
     users = load_users()
     if un in users:
-        # Прикрепляем актуальную аватарку к сообщению
+        # Прикрепляем и актуальную аватарку, И актуальное имя
         data['avatar'] = users[un].get('avatar', '')
+        data['user'] = users[un].get('display_name', un) # Теперь имя тоже живое
     
     data['timestamp'] = time.time()
     save_message(data)
