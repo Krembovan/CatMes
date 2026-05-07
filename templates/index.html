@@ -5,259 +5,201 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>CAT Messenger</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root { 
-            --bg: #0a0f18; 
-            --side: #0f172a;
-            --surf: #1e293b; 
-            --prim: #3b82f6; 
-            --prim-glow: rgba(59, 130, 246, 0.3);
-            --text: #f8fafc; 
-            --sec: #94a3b8; 
-            --brd: rgba(255, 255, 255, 0.08); 
+            --bg: #090c10; --surf: #161b22; --prim: #7c5cfc; --prim-glow: rgba(124, 92, 252, 0.4);
+            --text: #f0f6fc; --sec: #8b949e; --brd: rgba(255, 255, 255, 0.1); 
         }
-
-        * { margin:0; padding:0; box-sizing:border-box; font-family: 'Inter', -apple-system, sans-serif; }
-        
+        * { margin:0; padding:0; box-sizing:border-box; font-family: 'Inter', sans-serif; }
         body { background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
-
-        /* Скроллбар */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: var(--brd); border-radius: 10px; }
+        
+        .btn { padding:12px; border-radius:14px; border:none; cursor:pointer; font-weight:600; transition:0.3s; width: 100%; margin-bottom: 8px; }
+        .btn-p { background: var(--prim); color: #fff; box-shadow: 0 4px 15px var(--prim-glow); }
+        .btn-s { background: var(--surf); color: var(--text); border: 1px solid var(--brd); }
+        .input { width:100%; padding:14px; background:var(--surf); border:1px solid var(--brd); border-radius:12px; color:#fff; outline:none; margin-bottom:12px; }
 
         .app { display:flex; height:100vh; }
-
-        /* Боковая панель */
-        .side { 
-            width:300px; 
-            background: var(--side); 
-            border-right:1px solid var(--brd); 
-            display:flex; 
-            flex-direction:column; 
-            transition: 0.3s;
-        }
-
-        .main { flex:1; display:flex; flex-direction:column; background: var(--bg); position: relative; }
-
-        /* Сообщения */
-        #msgs { flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; }
-        .msg { display:flex; gap:12px; max-width:85%; animation: fadeIn 0.2s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .side { width:300px; background: rgba(13, 17, 23, 0.8); backdrop-filter: blur(10px); border-right:1px solid var(--brd); display:flex; flex-direction:column; }
+        .main { flex:1; display:flex; flex-direction:column; }
         
+        .item { display:flex; align-items:center; gap:12px; padding:12px 16px; border-radius:14px; cursor:pointer; margin: 2px 8px; color: var(--sec); }
+        .item:hover, .item.active { background: var(--surf); color: #fff; }
+        .av { width:40px; height:40px; border-radius:12px; object-fit:cover; background: var(--surf); border: 1px solid var(--brd); cursor: pointer; }
+        .av-lg { width:100px; height:100px; border-radius:25px; margin: 0 auto 15px; display: block; border: 2px solid var(--prim); }
+
+        #msgs { flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; }
+        .msg { display:flex; gap:12px; max-width:75%; }
         .msg.my { align-self:flex-end; flex-direction:row-reverse; }
-        .bubble { 
-            padding:12px 16px; 
-            border-radius:18px; 
-            background: var(--surf); 
-            border: 1px solid var(--brd); 
-            line-height: 1.5;
-            font-size: 0.95rem;
-            word-wrap: break-word;
-        }
-        .my .bubble { background: var(--prim); border: none; box-shadow: 0 4px 12px var(--prim-glow); }
+        .bubble { padding:12px 16px; border-radius:18px; background: var(--surf); border: 1px solid var(--brd); }
+        .my .bubble { background: var(--prim); border: none; }
 
-        /* Поле ввода */
-        .input-area { padding:20px; display:flex; gap:10px; background: var(--bg); border-top: 1px solid var(--brd); }
-        .input { 
-            width:100%; padding:14px; background:var(--surf); border:1px solid var(--brd); 
-            border-radius:14px; color:#fff; outline:none; font-size: 1rem; transition: 0.2s;
-        }
-        .input:focus { border-color: var(--prim); box-shadow: 0 0 0 2px var(--prim-glow); }
-
-        /* Кнопки */
-        .btn-send { 
-            background: var(--prim); color: white; border: none; border-radius: 14px; 
-            width: 50px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center;
-        }
-        .btn-send:hover { transform: scale(1.05); filter: brightness(1.1); }
-
-        /* Профиль как на скрине */
-        .overlay { 
-            position:fixed; inset:0; background:rgba(0,0,0,0.8); 
-            backdrop-filter:blur(12px); display:none; align-items:center; justify-content:center; z-index:100; 
-        }
+        .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(8px); display:none; align-items:center; justify-content:center; z-index:100; }
         .overlay.active { display:flex; }
+        .modal { background:var(--bg); padding:30px; border-radius:28px; width:360px; border:1px solid var(--brd); text-align: center; }
         
-        .modal { 
-            background: var(--side); padding:0; border-radius:24px; width:380px; 
-            overflow: hidden; border:1px solid var(--brd); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
-        }
-        .prof-header { height: 100px; background: linear-gradient(45deg, var(--prim), #a855f7); position: relative; }
-        .prof-content { padding: 60px 20px 20px; text-align: left; position: relative; }
-        .av-lg { 
-            width:90px; height:90px; border-radius:20px; border: 6px solid var(--side);
-            position: absolute; top: -45px; left: 20px; object-fit: cover; background: var(--surf);
-        }
-        .prof-name { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
-        .prof-tag { color: var(--sec); font-size: 0.9rem; margin-bottom: 15px; }
-        .prof-bio { background: var(--bg); padding: 12px; border-radius: 12px; font-size: 0.9rem; margin-bottom: 20px; color: #cbd5e1; }
-
-        /* Мобильная адаптация */
-        @media (max-width: 768px) {
-            .side { 
-                position: absolute; left: -100%; z-index: 10; height: 100%; width: 85%;
-            }
-            .side.active { left: 0; }
-            .msg { max-width: 90%; }
-        }
+        .notif-panel { position: absolute; top: 70px; left: 20px; width: 280px; background: var(--surf); border: 1px solid var(--brd); border-radius: 18px; display: none; z-index: 90; }
+        .notif-panel.active { display: block; }
     </style>
 </head>
 <body>
+    <div id="toast" style="position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:1000; display:none; background:var(--prim); padding:10px 20px; border-radius:10px;"></div>
 
     <div id="auth" class="overlay active">
-        <div class="modal" style="padding: 30px; text-align: center;">
-            <h2 style="margin-bottom: 20px;">Вход в CAT</h2>
-            <input id="uInp" class="input" placeholder="Логин" style="margin-bottom: 10px;">
-            <input id="pInp" class="input" type="password" placeholder="Пароль" style="margin-bottom: 20px;">
-            <button class="btn-send" id="loginBtn" style="width: 100%; height: 50px;">Войти</button>
+        <div class="modal">
+            <h2>😸 CAT</h2><br>
+            <input id="uInp" class="input" placeholder="Логин">
+            <input id="pInp" class="input" type="password" placeholder="Пароль">
+            <button class="btn btn-p" id="loginBtn">Войти</button>
         </div>
     </div>
 
     <div class="app" id="app" style="display:none;">
-        <aside class="side" id="sidebar">
-            <div style="padding:20px; font-weight:800; font-size:1.2rem; border-bottom:1px solid var(--brd);">CAT MESSENGER</div>
-            <div id="rooms" style="padding: 10px;">
-                <div class="item active" style="padding: 12px; border-radius: 10px; cursor: pointer; background: var(--surf);" data-room="Общий">🌍 Общий чат</div>
-            </div>
-            <div id="flist" style="flex:1; overflow-y:auto;"></div>
-            <div style="padding: 15px; border-top: 1px solid var(--brd); cursor:pointer" onclick="mod('#myProf',1)">
-                <div style="display:flex; align-items:center; gap:10px;">
-                    <img id="myAvSmall" class="av" style="width:35px; height:35px; border-radius:8px">
-                    <span id="myNameSmall">Загрузка...</span>
+        <div class="side">
+            <div style="padding:20px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--brd);">
+                <b style="color:var(--prim)">CAT</b>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn-s" style="width:36px; height:36px; border-radius:10px;" onclick="$('#notif').classList.toggle('active')">🔔</button>
+                    <button class="btn-s" style="width:36px; height:36px; border-radius:10px;" onclick="mod('#addF',1)">+</button>
+                    <button class="btn-s" style="width:36px; height:36px; border-radius:10px;" onclick="mod('#myProf',1)">👤</button>
                 </div>
             </div>
-        </aside>
+            <div id="notif" class="notif-panel"></div>
+            <div style="flex:1; overflow-y:auto; padding-top:10px;">
+                <div id="rooms"><div class="item active" data-room="Общий">🌍 Общий канал</div></div>
+                <div id="flist"></div>
+            </div>
+        </div>
 
-        <main class="main">
-            <header style="padding:15px 25px; border-bottom:1px solid var(--brd); display:flex; align-items:center; gap:15px;">
-                <button id="menuBtn" style="background:none; border:none; color:white; font-size:1.5rem; display:none;">☰</button>
-                <b id="h"># Общий чат</b>
-            </header>
-            
+        <div class="main">
+            <div style="padding:15px 25px; border-bottom:1px solid var(--brd);"><b id="h"># Общий канал</b></div>
             <div id="msgs"></div>
-
-            <div class="input-area">
-                <input id="mInp" class="input" placeholder="Написать сообщение..." autocomplete="off">
-                <button id="sendBtn" class="btn-send">➤</button>
-            </div>
-        </main>
-    </div>
-
-    <div id="userProf" class="overlay">
-        <div class="modal">
-            <div class="prof-header"></div>
-            <div class="prof-content">
-                <img id="v_av" src="" class="av-lg">
-                <div class="prof-name" id="v_name">Name</div>
-                <div class="prof-tag" id="v_user">@username</div>
-                <div style="font-weight:600; font-size:0.8rem; margin-bottom:8px; text-transform:uppercase; color:var(--sec)">О себе</div>
-                <div class="prof-bio" id="v_bio">Bio text here...</div>
-                <div id="v_btns"></div>
-                <button class="input" style="margin-top:10px; cursor:pointer" onclick="mod('#userProf',0)">Закрыть</button>
+            <div style="padding:20px; display:flex; gap:10px;">
+                <input id="mInp" class="input" style="margin:0" placeholder="Сообщение...">
+                <button id="send" class="btn btn-p" style="width:50px; margin:0">➤</button>
             </div>
         </div>
     </div>
 
-    <div id="myProf" class="overlay">
-        <div class="modal" style="padding:25px;">
-            <h3>Настройки профиля</h3><br>
-            <input id="p_av" class="input" placeholder="Ссылка на фото">
-            <input id="p_name" class="input" placeholder="Ваше имя">
-            <textarea id="p_bio" class="input" placeholder="О себе" style="height:80px; resize:none"></textarea>
-            <button class="btn-send" id="saveP" style="width:100%; height:45px; margin-bottom:10px">Сохранить</button>
-            <button class="input" style="cursor:pointer" onclick="mod('#myProf',0)">Отмена</button>
-        </div>
-    </div>
+    <div id="myProf" class="overlay"><div class="modal">
+        <h3>Настройки профиля</h3><br>
+        <img id="myAvDisp" src="" class="av-lg">
+        <input id="p_av" class="input" placeholder="Ссылка на аватар">
+        <input id="p_name" class="input" placeholder="Имя">
+        <textarea id="p_bio" class="input" placeholder="О себе" style="height:60px"></textarea>
+        <button class="btn btn-p" id="saveP">Сохранить</button>
+        <button class="btn btn-s" onclick="mod('#myProf',0)">Закрыть</button>
+        <button class="btn btn-s" id="logout" style="color:red">Выйти</button>
+    </div></div>
+
+    <div id="userProf" class="overlay"><div class="modal">
+        <img id="v_av" src="" class="av-lg">
+        <h3 id="v_name"></h3>
+        <p id="v_user" style="color:var(--sec); font-size:0.9rem"></p><br>
+        <p id="v_bio" style="font-size:0.95rem"></p><br>
+        <div id="v_btns"></div>
+        <button class="btn btn-s" onclick="mod('#userProf',0)">Закрыть</button>
+    </div></div>
+
+    <div id="addF" class="overlay"><div class="modal">
+        <h3>Добавить друга</h3><br>
+        <input id="fSearch" class="input" placeholder="@username">
+        <button class="btn btn-p" id="sendFReq">Отправить запрос</button>
+        <button class="btn btn-s" onclick="mod('#addF',0)">Отмена</button>
+    </div></div>
 
     <script>
         const $ = s => document.querySelector(s), socket = io();
         let state = { me: null, room: 'Общий' };
 
-        const mod = (id, open) => $(id).classList[open?'add':'remove']('active');
-        
-        // Адаптив меню
-        if (window.innerWidth <= 768) {
-            $('#menuBtn').style.display = 'block';
-            $('#menuBtn').onclick = () => $('#sidebar').classList.toggle('active');
+        const mod = (id, open) => {
+    const el = $(id);
+    if (open) {
+        el.classList.add('active');
+        // Если открываем СВОИ настройки, подставляем текущие данные в поля
+        if (id === '#myProf' && state.me) {
+            $('#p_name').value = state.me.display_name || '';
+            $('#p_bio').value = state.me.bio || '';
+            $('#p_av').value = state.me.avatar || '';
         }
-
+    } else {
+        el.classList.remove('active');
+    }
+};
+        const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+        
         const login = (u, p) => {
             localStorage.setItem('cat_u', u); localStorage.setItem('cat_p', p);
             socket.emit('auth', { action: 'login', username: u, password: p });
-        };
-
-        const sendMessage = () => {
-            const v = $('#mInp').value.trim();
-            if(v && state.me) {
-                socket.emit('message', {
-                    room: state.room,
-                    text: v,
-                    username: state.me.username
-                });
-                $('#mInp').value = '';
-            }
-        };
-
-        $('#sendBtn').onclick = sendMessage;
-        $('#mInp').onkeypress = e => { if(e.key === 'Enter') sendMessage(); };
-        $('#loginBtn').onclick = () => login($('#uInp').value, $('#pInp').value);
-
-        socket.on('auth_result', d => {
-            if(d.success) {
-                state.me = d.user;
-                $('#auth').classList.remove('active');
-                $('#app').style.display = 'flex';
-                $('#myNameSmall').textContent = d.user.display_name;
-                $('#myAvSmall').src = d.user.avatar || `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${d.user.username}`;
-            } else {
-                alert(d.error || 'Ошибка входа');
-            }
-        });
-
-        socket.on('message', m => {
-            const isMy = m.username === state.me?.username;
-            const html = `
-                <div class="msg ${isMy?'my':''}">
-                    <img src="${m.avatar || 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed='+m.username}" 
-                         style="width:35px; height:35px; border-radius:8px; cursor:pointer" 
-                         onclick="viewProfile('${m.username}')">
-                    <div class="bubble">
-                        ${!isMy ? `<div style="font-weight:700; font-size:0.75rem; color:var(--prim); margin-bottom:4px">@${m.username}</div>` : ''}
-                        ${m.text}
-                    </div>
-                </div>`;
-            $('#msgs').insertAdjacentHTML('beforeend', html);
-            $('#msgs').scrollTop = $('#msgs').scrollHeight;
-        });
-
-        const viewProfile = (un) => {
-            socket.emit('get_user_profile', { username: un });
-        };
-
-        socket.on('user_profile', d => {
-            const u = d.user;
-            $('#v_av').src = u.avatar || `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${d.username}`;
-            $('#v_name').textContent = u.display_name;
-            $('#v_user').textContent = '@' + d.username;
-            $('#v_bio').textContent = u.bio || 'Пользователь CAT Messenger';
-            mod('#userProf', 1);
-        });
-
-        $('#saveP').onclick = () => {
-            socket.emit('update_profile', {
-                username: state.me.username,
-                display_name: $('#p_name').value,
-                bio: $('#p_bio').value,
-                avatar: $('#p_av').value
-            });
-            mod('#myProf', 0);
         };
 
         window.onload = () => {
             const u=localStorage.getItem('cat_u'), p=localStorage.getItem('cat_p');
             if(u && p) login(u, p);
         };
+
+        const renderMsg = m => {
+            const isMy = m.username === state.me?.username;
+            $('#msgs').insertAdjacentHTML('beforeend', `
+                <div class="msg ${isMy?'my':''}">
+                    <img class="av" src="${m.avatar || 'https://ui-avatars.com/api/?name='+m.username}" onclick="viewProfile('${m.username}')">
+                    <div class="bubble">
+                        ${isMy?'':`<div style="color:var(--prim); font-weight:800; font-size:0.7rem; cursor:pointer" onclick="viewProfile('${m.username}')">${esc(m.user)}</div>`}
+                        ${esc(m.text)}
+                    </div>
+                </div>`);
+            $('#msgs').scrollTop = $('#msgs').scrollHeight;
+        };
+
+        const viewProfile = (un) => {
+            if(un === state.me.username) return mod('#myProf', 1);
+            socket.emit('get_user_profile', { username: un, requester: state.me.username });
+        };
+
+        const updateUI = () => {
+            if(!state.me) return;
+            $('#myAvDisp').src = state.me.avatar || 'https://ui-avatars.com/api/?name='+state.me.username;
+            $('#flist').innerHTML = '<p style="font-size:0.7rem; color:var(--sec); margin:15px 10px 5px;">ДРУЗЬЯ</p>' + 
+                (state.me.friends || []).map(f => `<div class="item" data-dm="${f}"><img class="av" src="https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${f}"><span>@${f}</span></div>`).join('');
+        };
+
+        document.addEventListener('click', e => {
+            const t = e.target, r = t.closest('[data-room]')?.dataset.room, dm = t.closest('[data-dm]')?.dataset.dm;
+            if(r) { state.room=r; $('#h').textContent='# '+r; $('#msgs').innerHTML=''; socket.emit('join',{room:r}); }
+            if(dm) { const p=[state.me.username, dm].sort(); state.room=`dm_${p[0]}_${p[1]}`; $('#h').textContent='@'+dm; $('#msgs').innerHTML=''; socket.emit('join',{room:state.room}); }
+            if(t.id === 'loginBtn') login($('#uInp').value, $('#pInp').value);
+            if(t.id === 'send') { const v=$('#mInp').value.trim(); if(v){ socket.emit('message',{room:state.room, text:v, user:state.me.display_name, username:state.me.username, avatar:state.me.avatar}); $('#mInp').value=''; } }
+            if(t.id === 'saveP') {
+    socket.emit('update_profile', { 
+        username: state.me.username, 
+        display_name: $('#p_name').value, 
+        bio: $('#p_bio').value, 
+        avatar: $('#p_av').value 
+    });
+    mod('#myProf', 0); // ЗАКРЫВАЕМ ОКНО
+}
+            if(t.id === 'logout') { localStorage.clear(); location.reload(); }
+            if(t.classList.contains('overlay')) t.classList.remove('active');
+        });
+
+        socket.on('auth_result', d => {
+            if(d.success) { state.me=d.user; $('#auth').classList.remove('active'); $('#app').style.display='flex'; updateUI(); }
+        });
+
+        socket.on('user_profile', d => {
+            const u = d.user;
+            $('#v_av').src = u.avatar || 'https://ui-avatars.com/api/?name='+d.username;
+            $('#v_name').textContent = u.display_name;
+            $('#v_user').textContent = '@' + d.username;
+            $('#v_bio').textContent = u.bio || 'Нет описания';
+            $('#v_btns').innerHTML = state.me.friends?.includes(d.username) ? 
+                `<button class="btn btn-p" onclick="mod('#userProf',0); document.querySelector('[data-dm=\\'${d.username}\\']').click()">Написать</button>` : 
+                `<button class="btn btn-p" onclick="socket.emit('send_friend_request',{my_username:state.me.username,target_username:'${d.username}'})">Добавить в друзья</button>`;
+            mod('#userProf', 1);
+        });
+
+        socket.on('message', renderMsg);
+        socket.on('history', h => { $('#msgs').innerHTML=''; h.forEach(renderMsg); });
+        $('#mInp').onkeypress = e => e.key === 'Enter' && $('#send').click();
     </script>
 </body>
 </html>
