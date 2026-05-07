@@ -3,85 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>CAT</title>
+    <title>CAT Messenger</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         :root { --bg: #0d1117; --surf: #161b22; --prim: #7c5cfc; --text: #e2e8f0; --sec: #94a3b8; --brd: rgba(255,255,255,0.06); }
         * { margin:0; padding:0; box-sizing:border-box; font-family: 'Segoe UI', sans-serif; }
         body { background:#090c12; color:var(--text); height:100vh; overflow:hidden; }
-        
-        /* UI Components */
         .btn { padding:12px; border-radius:12px; border:none; cursor:pointer; font-weight:600; transition:0.2s; width:100%; margin-bottom:8px; }
         .btn-p { background:var(--prim); color:#fff; }
         .btn-s { background:transparent; color:var(--text); border:1px solid var(--brd); }
         .input { width:100%; padding:12px; background:var(--surf); border:1px solid var(--brd); border-radius:10px; color:#fff; outline:none; margin-bottom:12px; }
-        
-        /* Layout */
         .app { display:flex; height:100vh; }
-        .side { width:320px; background:var(--bg); border-right:1px solid var(--brd); display:flex; flex-direction:column; transition:0.3s; }
+        .side { width:320px; background:var(--bg); border-right:1px solid var(--brd); display:flex; flex-direction:column; }
         .main { flex:1; display:flex; flex-direction:column; min-width:0; }
-        
-        /* Elements */
         .item { display:flex; align-items:center; gap:12px; padding:10px 15px; border-radius:12px; cursor:pointer; color:var(--sec); }
         .item:hover, .item.active { background:var(--surf); color:#fff; }
         .av { width:38px; height:38px; border-radius:10px; object-fit:cover; background:var(--surf); }
         #msgs { flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
-        
-        /* Modals & Overlays */
         .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); display:none; align-items:center; justify-content:center; z-index:100; }
         .overlay.active { display:flex; }
         .modal { background:var(--bg); padding:30px; border-radius:24px; width:400px; border:1px solid var(--brd); }
-        
         .msg { display:flex; gap:10px; max-width:80%; margin-bottom:5px; }
         .msg.my { align-self:flex-end; flex-direction:row-reverse; }
         .bubble { padding:10px 15px; border-radius:15px; background:var(--surf); font-size:0.9rem; position:relative; }
         .my .bubble { background:var(--prim); }
-
-        @media (max-width:768px) { .side.hidden { display:none; } }
+        .badge { background:red; color:#fff; border-radius:50%; padding:2px 6px; font-size:0.7rem; position:absolute; top:10px; right:10px; display:none; }
+        .badge.show { display:block; }
     </style>
 </head>
 <body>
-    <div id="toast" style="position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:1000;"></div>
+    <div id="toast" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:1000;background:var(--prim);padding:10px 20px;border-radius:10px;display:none;"></div>
 
     <div id="auth" class="overlay active">
         <div class="modal">
-            <h2 style="text-align:center; margin-bottom:20px;">😸 CAT</h2>
-            <div id="authBox">
-                <input id="uInp" class="input" placeholder="Username">
-                <input id="pInp" class="input" type="password" placeholder="Password">
-                <button class="btn btn-p" id="loginBtn">Войти</button>
-                <p style="text-align:center; font-size:0.8rem; cursor:pointer" id="switchAuth">Создать аккаунт</p>
-            </div>
+            <h2 style="text-align:center;margin-bottom:20px;">😸 CAT</h2>
+            <input id="uInp" class="input" placeholder="Логин">
+            <input id="pInp" class="input" type="password" placeholder="Пароль">
+            <button class="btn btn-p" id="loginBtn">Войти</button>
+            <p style="text-align:center;font-size:0.8rem;cursor:pointer;opacity:0.6" id="switchAuth">Нет аккаунта? Создать</p>
         </div>
     </div>
 
     <div class="app" id="app" style="display:none;">
-        <div class="side" id="sidebar">
-            <div style="padding:20px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--brd);">
+        <div class="side">
+            <div style="padding:20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--brd);">
                 <b style="color:var(--prim)">CAT</b>
-                <div>
-                    <button class="btn-s" style="width:30px; height:30px; border-radius:50%" onclick="mod('#notifBox',1)">🔔</button>
-                    <button class="btn-s" style="width:30px; height:30px; border-radius:50%" onclick="mod('#prof',1)">👤</button>
+                <div style="display:flex;gap:10px;">
+                    <button class="btn-s" style="width:34px;height:34px;border-radius:50%" onclick="mod('#addF',1)">+</button>
+                    <button class="btn-s" style="width:34px;height:34px;border-radius:50%" onclick="mod('#prof',1)">👤</button>
                 </div>
             </div>
-            <div style="flex:1; overflow-y:auto; padding:10px;">
-                <div id="rooms">
-                    <div class="item active" data-room="Общий">🌍 Общий канал</div>
-                </div>
-                <p style="font-size:0.7rem; color:var(--sec); margin:15px 0 5px 10px;">ДРУЗЬЯ</p>
+            <div style="flex:1;overflow-y:auto;padding:10px;">
+                <div id="rooms"><div class="item active" data-room="Общий">🌍 Общий канал</div></div>
+                <p style="font-size:0.7rem;color:var(--sec);margin:15px 10px 5px;">ДРУЗЬЯ</p>
                 <div id="flist"></div>
             </div>
         </div>
-        
         <div class="main">
-            <div style="padding:15px 20px; border-bottom:1px solid var(--brd); display:flex; align-items:center;">
-                <button id="back" style="display:none; margin-right:10px;" class="btn-s">←</button>
+            <div style="padding:15px 20px;border-bottom:1px solid var(--brd);display:flex;justify-content:space-between;align-items:center;">
                 <b id="h"># Общий канал</b>
+                <div id="callZone" style="display:none;"><button class="btn-p" style="padding:5px 15px;" id="callBtn">📞 Позвонить</button></div>
             </div>
             <div id="msgs"></div>
-            <div style="padding:20px; display:flex; gap:10px; background:var(--bg)">
+            <div style="padding:20px;display:flex;gap:10px;background:var(--bg)">
                 <input id="mInp" class="input" style="margin:0" placeholder="Сообщение...">
-                <button class="btn-p" id="send" style="width:50px; margin:0">➤</button>
+                <button class="btn-p" id="send" style="width:50px;margin:0">➤</button>
             </div>
         </div>
     </div>
@@ -91,29 +77,47 @@
         <input id="p_name" class="input" placeholder="Имя">
         <textarea id="p_bio" class="input" placeholder="О себе"></textarea>
         <button class="btn btn-p" id="saveP">Сохранить</button>
+        <button class="btn btn-s" id="logout" style="color:red">Выйти</button>
         <button class="btn btn-s" onclick="mod('#prof',0)">Закрыть</button>
-        <button class="btn btn-s" style="color:red" id="logout">Выйти</button>
+    </div></div>
+
+    <div id="addF" class="overlay"><div class="modal">
+        <h2>➕ Добавить друга</h2>
+        <input id="fSearch" class="input" placeholder="@username">
+        <button class="btn btn-p" id="sendFReq">Отправить запрос</button>
+        <button class="btn btn-s" onclick="mod('#addF',0)">Отмена</button>
     </div></div>
 
     <script>
-        const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
-        const socket = io(), state = { me: null, room: 'Общий', dmu: null };
+        const $ = s => document.querySelector(s), socket = io();
+        let state = { me: null, room: 'Общий', dmu: null, pc: null, stream: null };
 
         const mod = (id, open) => $(id).classList[open?'add':'remove']('active');
         const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+        const toast = (m) => { const e = $('#toast'); e.textContent = m; e.style.display = 'block'; setTimeout(() => e.style.display='none', 3000); };
 
-        // Rendering
+        // --- Auth Logic (Auto-login) ---
+        const login = (u, p) => {
+            localStorage.setItem('cat_u', u); localStorage.setItem('cat_p', p);
+            socket.emit('auth', { action: 'login', username: u, password: p });
+        };
+
+        window.onload = () => {
+            const u = localStorage.getItem('cat_u'), p = localStorage.getItem('cat_p');
+            if (u && p) login(u, p);
+        };
+
+        // --- UI & Rendering ---
         const renderMsg = m => {
             const isMy = m.username === state.me?.username;
-            const html = `
+            $('#msgs').insertAdjacentHTML('beforeend', `
                 <div class="msg ${isMy?'my':''}">
                     <img class="av" src="${m.avatar || 'https://ui-avatars.com/api/?name='+m.username}">
                     <div class="bubble">
-                        ${isMy?'':`<div style="color:var(--prim); font-weight:700; font-size:0.7rem">${esc(m.user)}</div>`}
+                        ${isMy?'':`<div style="color:var(--prim);font-weight:700;font-size:0.7rem">${esc(m.user)}</div>`}
                         ${esc(m.text)}
                     </div>
-                </div>`;
-            $('#msgs').insertAdjacentHTML('beforeend', html);
+                </div>`);
             $('#msgs').scrollTop = $('#msgs').scrollHeight;
         };
 
@@ -123,36 +127,45 @@
                 <div class="item" data-dm="${f}">
                     <img class="av" src="https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${f}">
                     <span>@${f}</span>
-                </div>
-            `).join('');
+                </div>`).join('');
+            // Рендер заявок в друзья
+            (state.me.requests || []).forEach(r => toast(`Запрос от @${r}`));
         };
 
-        // Actions
-        const send = () => {
-            const t = $('#mInp').value.trim();
-            if(!t) return;
-            socket.emit('message', { room: state.room, text: t, user: state.me.display_name, username: state.me.username });
-            $('#mInp').value = '';
-        };
-
+        // --- Event Delegation ---
         document.addEventListener('click', e => {
             const t = e.target, r = t.closest('[data-room]')?.dataset.room, dm = t.closest('[data-dm]')?.dataset.dm;
-            if(r) { state.room = r; $('#msgs').innerHTML = ''; socket.emit('join', {room:r}); $('#h').textContent = '# '+r; }
-            if(dm) { state.dmu = dm; const p = [state.me.username, dm].sort(); state.room = `dm_${p[0]}_${p[1]}`; $('#msgs').innerHTML = ''; socket.emit('join', {room:state.room}); $('#h').textContent = '@'+dm; }
-            if(t.id === 'loginBtn') socket.emit('auth', { action:'login', username: $('#uInp').value, password: $('#pInp').value });
-            if(t.id === 'send') send();
+            if(r) { state.room = r; state.dmu = null; $('#h').textContent = '# '+r; $('#callZone').style.display='none'; $('#msgs').innerHTML = ''; socket.emit('join', {room:r}); }
+            if(dm) { state.dmu = dm; const p = [state.me.username, dm].sort(); state.room = `dm_${p[0]}_${p[1]}`; $('#h').textContent = '@'+dm; $('#callZone').style.display='block'; $('#msgs').innerHTML = ''; socket.emit('join', {room:state.room}); }
+            if(t.id === 'loginBtn') login($('#uInp').value, $('#pInp').value);
+            if(t.id === 'send') { const val = $('#mInp').value.trim(); if(val) { socket.emit('message', { room: state.room, text: val, user: state.me.display_name, username: state.me.username }); $('#mInp').value = ''; } }
+            if(t.id === 'sendFReq') { socket.emit('send_friend_request', { my_username: state.me.username, target_username: $('#fSearch').value.replace('@','') }); mod('#addF', 0); }
             if(t.id === 'logout') { localStorage.clear(); location.reload(); }
+            if(t.id === 'callBtn') startCall(state.dmu);
             if(t.classList.contains('overlay')) mod(t, 0);
         });
 
+        // --- WebRTC (Base) ---
+        async function startCall(u) {
+            toast(`Звоним @${u}...`);
+            state.stream = await navigator.mediaDevices.getUserMedia({audio:true});
+            state.pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+            state.stream.getTracks().forEach(t => state.pc.addTrack(t, state.stream));
+            const offer = await state.pc.createOffer();
+            await state.pc.setLocalDescription(offer);
+            socket.emit('call_user', {to:u, sdp:offer});
+        }
+
+        // --- Sockets ---
         socket.on('auth_result', d => {
             if(d.success) { state.me = d.user; $('#auth').classList.remove('active'); $('#app').style.display='flex'; updateUI(); }
-            else alert(d.error);
+            else { toast(d.error); localStorage.clear(); }
         });
         socket.on('message', renderMsg);
         socket.on('history', h => { $('#msgs').innerHTML = ''; h.forEach(renderMsg); });
+        socket.on('incoming_call', d => confirm(`Звонок от @${d.from}. Принять?`) && socket.emit('call_accepted', {to:d.from}));
 
-        $('#mInp').onkeypress = e => e.key === 'Enter' && send();
+        $('#mInp').onkeypress = e => e.key === 'Enter' && $('#send').click();
     </script>
 </body>
 </html>
