@@ -54,23 +54,18 @@
         .msg.my .msg-author { color: rgba(255,255,255,0.8); }
         .msg-delete-btn { cursor: pointer; font-size: 0.7rem; color: #ef4444; margin-left: 8px; opacity: 0; }
         .msg:hover .msg-delete-btn { opacity: 1; }
-        /* Цитата (reply) */
         .msg-reply { background: rgba(255,255,255,0.05); border-left: 3px solid var(--primary); padding: 6px 10px; margin-bottom: 6px; border-radius: 6px; font-size: 0.78rem; color: var(--text-secondary); cursor: pointer; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .msg-reply-name { font-weight: 700; color: var(--accent); }
         .msg-reply-preview { opacity: 0.8; }
-        /* Изображение в сообщении */
         .msg-image { max-width: 280px; max-height: 300px; border-radius: 12px; cursor: pointer; margin-top: 6px; transition: transform 0.2s; }
         .msg-image:hover { transform: scale(1.02); }
-        /* Лайтбокс */
         .lightbox-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 5000; align-items: center; justify-content: center; cursor: pointer; }
         .lightbox-overlay.active { display: flex; }
         .lightbox-overlay img { max-width: 95vw; max-height: 95vh; border-radius: 16px; object-fit: contain; }
-        /* Превью ответа (reply bar) */
         .reply-bar { display: none; padding: 10px 25px; background: var(--surface); border-top: 1px solid var(--border); align-items: center; gap: 12px; font-size: 0.8rem; }
         .reply-bar.show { display: flex; }
         .reply-bar-content { flex: 1; color: var(--text-secondary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .reply-bar-cancel { cursor: pointer; color: var(--danger); font-weight: 700; font-size: 1.2rem; }
-        /* Отправка файлов */
         .attach-btn { background: transparent; border: 1px solid var(--border); width: 48px; height: 48px; border-radius: 50%; cursor: pointer; font-size: 1.4rem; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); flex-shrink: 0; transition: 0.2s; }
         .attach-btn:hover { background: var(--surface); color: var(--text); }
         .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-secondary); gap: 15px; }
@@ -114,7 +109,6 @@
 </head>
 <body>
 
-<!-- Auth Modal -->
 <div id="authOverlay" class="modal-overlay active">
     <div class="modal">
         <h2>😸 <span style="background:linear-gradient(135deg,#7c5cfc,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">CAT</span></h2>
@@ -137,7 +131,6 @@
     </div>
 </div>
 
-<!-- Profile Modal -->
 <div id="profileOverlay" class="modal-overlay">
     <div class="modal">
         <h2>👤 Профиль</h2>
@@ -152,7 +145,6 @@
     </div>
 </div>
 
-<!-- Add Friend Modal -->
 <div id="friendOverlay" class="modal-overlay">
     <div class="modal">
         <h2>🔍 Найти друга</h2>
@@ -163,17 +155,14 @@
     </div>
 </div>
 
-<!-- User Profile Modal (dynamic content) -->
 <div id="userProfileOverlay" class="modal-overlay">
     <div class="modal" id="userProfileContent"></div>
 </div>
 
-<!-- Lightbox для изображений -->
 <div id="lightboxOverlay" class="lightbox-overlay" onclick="closeLightbox()">
     <img id="lightboxImg" src="" alt="Изображение">
 </div>
 
-<!-- Notifications Panel -->
 <div class="notif-overlay" id="notifPanel">
     <div class="notif-header">
         <span>🔔 Уведомления</span>
@@ -182,10 +171,8 @@
     <div id="notifList"></div>
 </div>
 
-<!-- Toast -->
 <div id="toast" class="toast"></div>
 
-<!-- Main App -->
 <div class="app-container" id="mainApp" style="display:none;">
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
@@ -223,13 +210,11 @@
                 <div style="font-size:0.85rem;color:var(--text-secondary);">Выберите чат или начните диалог</div>
             </div>
         </div>
-        <!-- Бар ответа (reply) -->
         <div class="reply-bar" id="replyBar">
             <span>↩</span>
             <div class="reply-bar-content" id="replyBarText"></div>
             <span class="reply-bar-cancel" onclick="cancelReply()">✕</span>
         </div>
-        <!-- Инпут -->
         <div class="input-box">
             <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
             <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Прикрепить изображение">📎</button>
@@ -240,19 +225,13 @@
 </div>
 
 <script>
-// ============================================================
-// ГЛОБАЛЬНОЕ СОСТОЯНИЕ
-// ============================================================
 const socket = io();
 let myData = null;
-let currentRoom = 'Общий';
+let currentRoom = null;
 let notifications = [];
 let dmUser = null;
-let replyTo = null; // ID сообщения, на которое отвечаем
+let replyTo = null;
 
-// ============================================================
-// БЕЗОПАСНОЕ ЭКРАНИРОВАНИЕ (полное покрытие)
-// ============================================================
 const ESC_MAP = {
     '&': '&amp;',
     '<': '&lt;',
@@ -267,9 +246,6 @@ function escapeHtml(str) {
     return String(str).replace(/[&<>"'`]/g, function(ch) { return ESC_MAP[ch]; });
 }
 
-// ============================================================
-// САНИТИЗАЦИЯ URL (защита от javascript: протокола)
-// ============================================================
 function sanitizeUrl(url) {
     if (!url) return '';
     url = url.trim();
@@ -288,9 +264,6 @@ function safeAvatarUrl(url, fallbackSeed) {
     return 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=' + encodeURIComponent(fallbackSeed || 'cat');
 }
 
-// ============================================================
-// УТИЛИТЫ ИНТЕРФЕЙСА
-// ============================================================
 function showToast(msg, type) {
     type = type || 'success';
     const el = document.getElementById('toast');
@@ -315,9 +288,6 @@ function switchAuth(mode) {
     document.getElementById('regError').textContent = '';
 }
 
-// ============================================================
-// ЛАЙТБОКС ДЛЯ ИЗОБРАЖЕНИЙ
-// ============================================================
 function openLightbox(src) {
     document.getElementById('lightboxImg').src = src;
     document.getElementById('lightboxOverlay').classList.add('active');
@@ -327,9 +297,6 @@ function closeLightbox() {
     document.getElementById('lightboxOverlay').classList.remove('active');
 }
 
-// ============================================================
-// ОТПРАВКА ФАЙЛОВ (ИЗОБРАЖЕНИЯ)
-// ============================================================
 function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -346,10 +313,14 @@ function handleFileSelect(event) {
     reader.onload = function(e) {
         const base64 = e.target.result;
         if (!myData) return;
+        if (!currentRoom) {
+            showToast('Выберите чат', 'error');
+            return;
+        }
         socket.emit('message', {
             room: currentRoom,
             text: '',
-            image: base64,  // base64-строка изображения
+            image: base64,
             user: myData.display_name,
             username: myData.username,
             avatar: myData.avatar
@@ -357,21 +328,15 @@ function handleFileSelect(event) {
         showToast('Изображение отправлено', 'success');
     };
     reader.readAsDataURL(file);
-    event.target.value = ''; // Сброс input
+    event.target.value = '';
 }
 
-// ============================================================
-// АВТО-ВХОД ИЗ LOCALSTORAGE
-// ============================================================
 const savedUser = localStorage.getItem('cat_user');
 const savedPass = localStorage.getItem('cat_pass');
 if (savedUser && savedPass) {
     socket.emit('auth', { action: 'login', username: savedUser, password: savedPass });
 }
 
-// ============================================================
-// АВТОРИЗАЦИЯ
-// ============================================================
 function handleLogin() {
     const u = document.getElementById('loginUser').value.trim();
     const p = document.getElementById('loginPass').value;
@@ -421,7 +386,6 @@ socket.on('auth_result', function(data) {
         updateBadge();
         updateFriendList();
         updateRoomList();
-        // НЕ переключаем на общий канал — показываем приветственный экран
         document.getElementById('messages').innerHTML = `
             <div class="empty-chat">
                 <div class="empty-chat-icon">🐱</div>
@@ -439,9 +403,6 @@ socket.on('auth_result', function(data) {
     }
 });
 
-// ============================================================
-// ПРОФИЛЬ
-// ============================================================
 function updateMyInfo() {
     if (!myData) return;
     document.getElementById('myName').textContent = myData.display_name;
@@ -495,9 +456,6 @@ function logout() {
     closeModal('profileOverlay');
 }
 
-// ============================================================
-// УВЕДОМЛЕНИЯ
-// ============================================================
 function toggleNotifPanel() {
     const p = document.getElementById('notifPanel');
     p.classList.toggle('open');
@@ -607,9 +565,6 @@ socket.on('new_notification', function(n) {
     showToast(n.text || '', 'info');
 });
 
-// ============================================================
-// ДРУЗЬЯ
-// ============================================================
 function updateFriendList() {
     if (!myData) return;
     updateBadge();
@@ -719,9 +674,6 @@ socket.on('friend_avatar', function(d) {
     });
 });
 
-// ============================================================
-// КОМНАТЫ
-// ============================================================
 function updateRoomList() {
     document.getElementById('roomList').innerHTML = '<div class="chat-item" onclick="switchRoom(\'Общий\')" data-room="Общий"><div class="chat-avatar">🌍</div><span>Общий канал</span></div>';
 }
@@ -752,9 +704,6 @@ function viewProfile(u) {
     socket.emit('get_user_profile', { username: u, requester: myData.username });
 }
 
-// ============================================================
-// ПРОСМОТР ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ (БЕЗ XSS)
-// ============================================================
 socket.on('user_profile', function(d) {
     if (d.error) { showToast(d.error, 'error'); return; }
 
@@ -891,9 +840,6 @@ socket.on('friend_removed_notify', function(d) {
     }
 });
 
-// ============================================================
-// ПЕРЕКЛЮЧЕНИЕ КОМНАТ
-// ============================================================
 function startDM(u) {
     dmUser = u;
     const sorted = [myData.username, u].sort();
@@ -938,9 +884,6 @@ function goBack() {
     document.getElementById('sidebar').classList.remove('hidden');
 }
 
-// ============================================================
-// ОТВЕТ НА СООБЩЕНИЕ (REPLY)
-// ============================================================
 function replyToMessage(msgId, author, preview) {
     replyTo = msgId;
     document.getElementById('replyBarText').textContent = '↩ ' + author + ': ' + preview;
@@ -954,13 +897,14 @@ function cancelReply() {
     document.getElementById('replyBarText').textContent = '';
 }
 
-// ============================================================
-// СООБЩЕНИЯ
-// ============================================================
 function sendMsg() {
     const i = document.getElementById('msgInput');
     const t = i.value.trim();
     if (!myData) return;
+    if (!currentRoom) {
+        showToast('Выберите чат', 'error');
+        return;
+    }
     if (!t) return;
 
     const msgData = {
@@ -971,7 +915,6 @@ function sendMsg() {
         avatar: myData.avatar
     };
 
-    // Добавляем reply_to если отвечаем
     if (replyTo) {
         msgData.reply_to = replyTo;
         cancelReply();
@@ -986,21 +929,6 @@ function deleteMessage(msgId) {
     socket.emit('delete_message', { msg_id: msgId, username: myData.username });
 }
 
-function getAllMessages() {
-    // Возвращает массив всех сообщений из DOM
-    const msgs = [];
-    const msgElements = document.querySelectorAll('.msg');
-    msgElements.forEach(function(el) {
-        msgs.push({
-            id: el.getAttribute('data-msg-id'),
-            username: el.getAttribute('data-username'),
-            user: el.getAttribute('data-user'),
-            text: el.getAttribute('data-text') || ''
-        });
-    });
-    return msgs;
-}
-
 function renderMessage(m) {
     const b = document.getElementById('messages');
     if (b.querySelector('.empty-chat')) b.innerHTML = '';
@@ -1008,9 +936,8 @@ function renderMessage(m) {
     const isMy = m.username === (myData ? myData.username : '');
     const canDel = myData && (myData.role === 'owner' || myData.role === 'admin' || myData.role === 'moderator');
     const hasImage = m.image && m.image.startsWith('data:image/');
-    const hasReply = m.reply_to && !m.image; // reply_to - ID сообщения, на которое отвечаем
+    const hasReply = m.reply_to && !m.image;
 
-    // Контейнер сообщения
     const msgDiv = document.createElement('div');
     msgDiv.className = 'msg' + (isMy ? ' my' : '');
     msgDiv.setAttribute('data-msg-id', m.id || m.timestamp || '');
@@ -1018,7 +945,6 @@ function renderMessage(m) {
     msgDiv.setAttribute('data-user', m.user || '');
     msgDiv.setAttribute('data-text', m.text || '');
 
-    // Аватар
     const avatarUrl = safeAvatarUrl(m.avatar, m.username);
     const fallbackAvUrl = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(m.username) + '&background=7c5cfc&color=fff&size=40';
     const avImg = document.createElement('img');
@@ -1031,11 +957,9 @@ function renderMessage(m) {
     avImg.addEventListener('error', function() { this.src = fallbackAvUrl; });
     msgDiv.appendChild(avImg);
 
-    // Пузырь сообщения
     const bubble = document.createElement('div');
     bubble.className = 'msg-bubble';
 
-    // Автор (только для чужих сообщений)
     if (!isMy) {
         const author = document.createElement('div');
         author.className = 'msg-author';
@@ -1046,7 +970,6 @@ function renderMessage(m) {
         bubble.appendChild(author);
     }
 
-    // Цитата (reply)
     if (hasReply) {
         const replyDiv = document.createElement('div');
         replyDiv.className = 'msg-reply';
@@ -1062,7 +985,6 @@ function renderMessage(m) {
         replyDiv.appendChild(replyName);
         replyDiv.appendChild(replyPreview);
 
-        // Клик по цитате скроллит к оригинальному сообщению
         replyDiv.addEventListener('click', function(e) {
             e.stopPropagation();
             const origMsg = document.querySelector('[data-msg-id="' + escapeHtml(m.reply_to) + '"]');
@@ -1076,13 +998,11 @@ function renderMessage(m) {
         bubble.appendChild(replyDiv);
     }
 
-    // Текст (только если не изображение)
     if (m.text && !hasImage) {
         const textNode = document.createTextNode(m.text);
         bubble.appendChild(textNode);
     }
 
-    // Изображение
     if (hasImage) {
         const img = document.createElement('img');
         img.className = 'msg-image';
@@ -1095,7 +1015,6 @@ function renderMessage(m) {
         });
         bubble.appendChild(img);
 
-        // Если есть и текст и изображение — текст перед картинкой
         if (m.text) {
             const textDiv = document.createElement('div');
             textDiv.style.marginBottom = '6px';
@@ -1104,18 +1023,15 @@ function renderMessage(m) {
         }
     }
 
-    // Время отправки
     const timeSpan = document.createElement('span');
     timeSpan.style.cssText = 'font-size:0.7rem;opacity:0.7;margin-left:6px;white-space:nowrap;';
     timeSpan.textContent = formatMsgTime(m.timestamp);
     bubble.appendChild(timeSpan);
 
-    // Кнопка ответа (reply) — показывается всегда при наведении
     const replyBtn = document.createElement('span');
     replyBtn.style.cssText = 'cursor:pointer;font-size:0.7rem;opacity:0;margin-left:8px;transition:opacity 0.2s;';
     replyBtn.textContent = '↩';
     replyBtn.title = 'Ответить';
-    replyBtn.addEventListener('mouseenter', function() { this.style.opacity = '1'; });
     replyBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         const preview = (m.text || (m.image ? '[Изображение]' : '')).substring(0, 50);
@@ -1123,7 +1039,9 @@ function renderMessage(m) {
     });
     bubble.appendChild(replyBtn);
 
-    // Кнопка удаления
+    msgDiv.addEventListener('mouseenter', function() { replyBtn.style.opacity = '1'; });
+    msgDiv.addEventListener('mouseleave', function() { replyBtn.style.opacity = '0'; });
+
     if (canDel) {
         const delBtn = document.createElement('span');
         delBtn.className = 'msg-delete-btn';
@@ -1142,9 +1060,6 @@ function renderMessage(m) {
     b.scrollTop = b.scrollHeight;
 }
 
-// ============================================================
-// ИНДИКАТОР ПЕЧАТИ
-// ============================================================
 let typingTimer;
 document.getElementById('msgInput').addEventListener('input', function() {
     if (currentRoom && currentRoom.startsWith('dm_')) {
@@ -1160,9 +1075,6 @@ socket.on('user_typing', function(d) {
     }, 1000);
 });
 
-// ============================================================
-// СОБЫТИЯ SOCKET
-// ============================================================
 function normalizeRoom(room) {
     if (!room) return '';
     if (room.startsWith('dm_')) {
@@ -1194,10 +1106,8 @@ socket.on('message_deleted', function() {
     socket.emit('join', { room: currentRoom });
 });
 
-// Обработчик messages_read — обновлён для проверки структуры данных
 socket.on('messages_read', function(data) {
     socket.emit('join', { room: currentRoom });
-    // После обновления не пытаемся искать ✓ в DOM — просто перезагружаем
 });
 
 socket.on('new_dm', function(data) {
@@ -1213,9 +1123,6 @@ socket.on('new_dm', function(data) {
     showToast('💬 @' + data.from + ': ' + data.text, 'info');
 });
 
-// ============================================================
-// ENTER ДЛЯ ФОРМ
-// ============================================================
 document.getElementById('loginPass').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') handleLogin();
 });
@@ -1223,16 +1130,10 @@ document.getElementById('regPass2').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') handleRegister();
 });
 
-// ============================================================
-// PWA SERVICE WORKER
-// ============================================================
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/static/sw.js').catch(function() {});
 }
 
-// ============================================================
-// УТИЛИТА: ВРЕМЯ
-// ============================================================
 function formatMsgTime(ts) {
     if (!ts) return '';
     const d = new Date(ts * 1000);
@@ -1271,9 +1172,6 @@ function timeAgo(d) {
     return Math.floor(s / 86400) + ' дн назад';
 }
 
-// ============================================================
-// WEBRTC ЗВОНКИ
-// ============================================================
 let localStream = null, peerConnection = null, currentCallUser = null;
 const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
