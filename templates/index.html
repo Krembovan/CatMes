@@ -47,13 +47,32 @@
         @keyframes fadeIn { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
         .msg.my { align-self: flex-end; flex-direction: row-reverse; }
         .msg-avatar { width: 34px; height: 34px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
-        .msg-bubble { padding: 12px 16px; border-radius: 18px; font-size: 0.9rem; line-height: 1.4; word-break: break-word; }
+        .msg-bubble { padding: 12px 16px; border-radius: 18px; font-size: 0.9rem; line-height: 1.4; word-break: break-word; position: relative; }
         .msg:not(.my) .msg-bubble { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 6px; }
         .msg.my .msg-bubble { background: linear-gradient(135deg, var(--primary), #9b7cfc); color: white; border-bottom-right-radius: 6px; }
         .msg-author { font-weight: 700; font-size: 0.8rem; margin-bottom: 2px; color: var(--accent); cursor: pointer; }
         .msg.my .msg-author { color: rgba(255,255,255,0.8); }
         .msg-delete-btn { cursor: pointer; font-size: 0.7rem; color: #ef4444; margin-left: 8px; opacity: 0; }
         .msg:hover .msg-delete-btn { opacity: 1; }
+        /* Цитата (reply) */
+        .msg-reply { background: rgba(255,255,255,0.05); border-left: 3px solid var(--primary); padding: 6px 10px; margin-bottom: 6px; border-radius: 6px; font-size: 0.78rem; color: var(--text-secondary); cursor: pointer; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .msg-reply-name { font-weight: 700; color: var(--accent); }
+        .msg-reply-preview { opacity: 0.8; }
+        /* Изображение в сообщении */
+        .msg-image { max-width: 280px; max-height: 300px; border-radius: 12px; cursor: pointer; margin-top: 6px; transition: transform 0.2s; }
+        .msg-image:hover { transform: scale(1.02); }
+        /* Лайтбокс */
+        .lightbox-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 5000; align-items: center; justify-content: center; cursor: pointer; }
+        .lightbox-overlay.active { display: flex; }
+        .lightbox-overlay img { max-width: 95vw; max-height: 95vh; border-radius: 16px; object-fit: contain; }
+        /* Превью ответа (reply bar) */
+        .reply-bar { display: none; padding: 10px 25px; background: var(--surface); border-top: 1px solid var(--border); align-items: center; gap: 12px; font-size: 0.8rem; }
+        .reply-bar.show { display: flex; }
+        .reply-bar-content { flex: 1; color: var(--text-secondary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .reply-bar-cancel { cursor: pointer; color: var(--danger); font-weight: 700; font-size: 1.2rem; }
+        /* Отправка файлов */
+        .attach-btn { background: transparent; border: 1px solid var(--border); width: 48px; height: 48px; border-radius: 50%; cursor: pointer; font-size: 1.4rem; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); flex-shrink: 0; transition: 0.2s; }
+        .attach-btn:hover { background: var(--surface); color: var(--text); }
         .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-secondary); gap: 15px; }
         .empty-chat-icon { font-size: 4rem; opacity: 0.3; }
         .input-box { padding: 20px 25px; display: flex; gap: 12px; background: var(--bg); border-top: 1px solid var(--border); }
@@ -90,7 +109,7 @@
         .toast.success { border-left: 4px solid var(--success); }
         .toast.error { border-left: 4px solid var(--danger); }
         .toast.info { border-left: 4px solid var(--accent); }
-        @media (max-width: 480px) { .sidebar { width: 100%; position: absolute; left: 0; top: 0; height: 100vh; z-index: 20; } .sidebar.hidden { display: none; } .chat-area { width: 100%; } .back-btn { display: block; } .notif-overlay { width: 95vw; right: 2.5vw; } }
+        @media (max-width: 480px) { .sidebar { width: 100%; position: absolute; left: 0; top: 0; height: 100vh; z-index: 20; } .sidebar.hidden { display: none; } .chat-area { width: 100%; } .back-btn { display: block; } .notif-overlay { width: 95vw; right: 2.5vw; } .msg-image { max-width: 200px; max-height: 200px; } }
     </style>
 </head>
 <body>
@@ -149,6 +168,11 @@
     <div class="modal" id="userProfileContent"></div>
 </div>
 
+<!-- Lightbox для изображений -->
+<div id="lightboxOverlay" class="lightbox-overlay" onclick="closeLightbox()">
+    <img id="lightboxImg" src="" alt="Изображение">
+</div>
+
 <!-- Notifications Panel -->
 <div class="notif-overlay" id="notifPanel">
     <div class="notif-header">
@@ -190,15 +214,25 @@
     <div class="chat-area">
         <div class="chat-header">
             <span class="back-btn" onclick="goBack()">←</span>
-            <span id="chatHeader"># Общий канал</span>
+            <span id="chatHeader">CAT</span>
         </div>
         <div id="messages">
             <div class="empty-chat">
-                <div class="empty-chat-icon">💬</div>
-                <div>Выберите чат</div>
+                <div class="empty-chat-icon">🐱</div>
+                <div style="font-size:1.2rem;font-weight:600;color:var(--text);">Добро пожаловать в CAT</div>
+                <div style="font-size:0.85rem;color:var(--text-secondary);">Выберите чат или начните диалог</div>
             </div>
         </div>
+        <!-- Бар ответа (reply) -->
+        <div class="reply-bar" id="replyBar">
+            <span>↩</span>
+            <div class="reply-bar-content" id="replyBarText"></div>
+            <span class="reply-bar-cancel" onclick="cancelReply()">✕</span>
+        </div>
+        <!-- Инпут -->
         <div class="input-box">
+            <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
+            <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Прикрепить изображение">📎</button>
             <input type="text" class="input-msg" id="msgInput" placeholder="Написать сообщение..." onkeypress="if(event.key==='Enter')sendMsg()">
             <button class="btn-send" onclick="sendMsg()">➤</button>
         </div>
@@ -214,6 +248,7 @@ let myData = null;
 let currentRoom = 'Общий';
 let notifications = [];
 let dmUser = null;
+let replyTo = null; // ID сообщения, на которое отвечаем
 
 // ============================================================
 // БЕЗОПАСНОЕ ЭКРАНИРОВАНИЕ (полное покрытие)
@@ -239,7 +274,7 @@ function sanitizeUrl(url) {
     if (!url) return '';
     url = url.trim();
     const lower = url.toLowerCase();
-    if (lower.startsWith('javascript:') || lower.startsWith('data:')) {
+    if (lower.startsWith('javascript:') || lower.startsWith('data:') && !lower.startsWith('data:image/')) {
         return '';
     }
     return url;
@@ -247,7 +282,7 @@ function sanitizeUrl(url) {
 
 function safeAvatarUrl(url, fallbackSeed) {
     const sanitized = sanitizeUrl(url);
-    if (sanitized && (sanitized.startsWith('http://') || sanitized.startsWith('https://'))) {
+    if (sanitized && (sanitized.startsWith('http://') || sanitized.startsWith('https://') || sanitized.startsWith('data:image/'))) {
         return sanitized;
     }
     return 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=' + encodeURIComponent(fallbackSeed || 'cat');
@@ -278,6 +313,51 @@ function switchAuth(mode) {
     document.getElementById('registerForm').style.display = mode === 'register' ? 'block' : 'none';
     document.getElementById('authError').textContent = '';
     document.getElementById('regError').textContent = '';
+}
+
+// ============================================================
+// ЛАЙТБОКС ДЛЯ ИЗОБРАЖЕНИЙ
+// ============================================================
+function openLightbox(src) {
+    document.getElementById('lightboxImg').src = src;
+    document.getElementById('lightboxOverlay').classList.add('active');
+}
+
+function closeLightbox() {
+    document.getElementById('lightboxOverlay').classList.remove('active');
+}
+
+// ============================================================
+// ОТПРАВКА ФАЙЛОВ (ИЗОБРАЖЕНИЯ)
+// ============================================================
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+        showToast('Только изображения', 'error');
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        showToast('Максимум 5 МБ', 'error');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const base64 = e.target.result;
+        if (!myData) return;
+        socket.emit('message', {
+            room: currentRoom,
+            text: '',
+            image: base64,  // base64-строка изображения
+            user: myData.display_name,
+            username: myData.username,
+            avatar: myData.avatar
+        });
+        showToast('Изображение отправлено', 'success');
+    };
+    reader.readAsDataURL(file);
+    event.target.value = ''; // Сброс input
 }
 
 // ============================================================
@@ -341,7 +421,15 @@ socket.on('auth_result', function(data) {
         updateBadge();
         updateFriendList();
         updateRoomList();
-        switchRoom('Общий');
+        // НЕ переключаем на общий канал — показываем приветственный экран
+        document.getElementById('messages').innerHTML = `
+            <div class="empty-chat">
+                <div class="empty-chat-icon">🐱</div>
+                <div style="font-size:1.2rem;font-weight:600;color:var(--text);">Добро пожаловать в CAT</div>
+                <div style="font-size:0.85rem;color:var(--text-secondary);">Выберите чат или начните диалог</div>
+            </div>`;
+        document.getElementById('chatHeader').textContent = 'CAT';
+        currentRoom = null;
     } else {
         if (document.getElementById('registerForm').style.display === 'block') {
             document.getElementById('regError').textContent = data.error;
@@ -398,7 +486,12 @@ function logout() {
     dmUser = null;
     document.getElementById('mainApp').style.display = 'none';
     document.getElementById('authOverlay').classList.add('active');
-    document.getElementById('messages').innerHTML = '<div class="empty-chat"><div class="empty-chat-icon">💬</div><div>Выберите чат</div></div>';
+    document.getElementById('messages').innerHTML = `
+        <div class="empty-chat">
+            <div class="empty-chat-icon">🐱</div>
+            <div style="font-size:1.2rem;font-weight:600;color:var(--text);">Добро пожаловать в CAT</div>
+            <div style="font-size:0.85rem;color:var(--text-secondary);">Выберите чат или начните диалог</div>
+        </div>`;
     closeModal('profileOverlay');
 }
 
@@ -427,7 +520,6 @@ function renderNotifications() {
     const l = document.getElementById('notifList');
     l.innerHTML = '';
 
-    // Запросы в друзья
     const requests = (myData && myData.requests || []).map(function(u) {
         return {
             type: 'friend_request',
@@ -437,7 +529,6 @@ function renderNotifications() {
         };
     });
 
-    // Объединяем с обычными уведомлениями
     const all = requests.concat(notifications);
 
     if (all.length === 0) {
@@ -452,7 +543,6 @@ function renderNotifications() {
         const item = document.createElement('div');
         item.className = 'notif-item';
 
-        // Текст уведомления
         const textDiv = document.createElement('div');
         textDiv.className = 'notif-text';
 
@@ -464,27 +554,22 @@ function renderNotifications() {
         } else {
             notifText = n.text || '';
         }
-        textDiv.textContent = notifText;  // textContent = авто-экранирование
+        textDiv.textContent = notifText;
         item.appendChild(textDiv);
 
-        // Время
         const timeDiv = document.createElement('div');
         timeDiv.className = 'notif-time';
         timeDiv.textContent = new Date(n.timestamp * 1000).toLocaleString();
         item.appendChild(timeDiv);
 
-        // Кликабельность для DM
         if (n.type === 'new_message') {
             item.style.cursor = 'pointer';
             item.addEventListener('click', function() {
-                if (n.from) {
-                    startDM(n.from);
-                }
+                if (n.from) startDM(n.from);
                 toggleNotifPanel();
             });
         }
 
-        // Кнопки для friend_request
         if (n.type === 'friend_request') {
             const actions = document.createElement('div');
             actions.className = 'notif-actions';
@@ -531,7 +616,6 @@ function updateFriendList() {
     const l = document.getElementById('friendList');
     l.innerHTML = '';
 
-    // Запросы в друзья (входящие)
     (myData.requests || []).forEach(function(u) {
         const item = document.createElement('div');
         item.className = 'friend-item';
@@ -559,12 +643,10 @@ function updateFriendList() {
         l.appendChild(item);
     });
 
-    // Друзья
     (myData.friends || []).forEach(function(u) {
         const item = document.createElement('div');
         item.className = 'friend-item';
 
-        // Аватар
         const img = document.createElement('img');
         img.className = 'chat-avatar friend-avatar-' + u;
         img.style.cssText = 'object-fit:cover;border-radius:12px;width:38px;height:38px;';
@@ -578,19 +660,15 @@ function updateFriendList() {
             this.style.display = 'none';
         });
 
-        // Fallback avatar
         const fallbackAv = document.createElement('div');
         fallbackAv.className = 'chat-avatar';
         fallbackAv.style.display = 'none';
         fallbackAv.textContent = '🔵';
 
-        // Имя
         const nameSpan = document.createElement('span');
         nameSpan.style.flex = '1';
         nameSpan.style.cursor = 'pointer';
-        nameSpan.addEventListener('click', function() {
-            startDM(u);
-        });
+        nameSpan.addEventListener('click', function() { startDM(u); });
 
         const nameStrong = document.createElement('span');
         nameStrong.style.fontWeight = '600';
@@ -603,7 +681,6 @@ function updateFriendList() {
         nameSpan.appendChild(nameStrong);
         nameSpan.appendChild(statusSpan);
 
-        // Кнопка удаления
         const removeBtn = document.createElement('span');
         removeBtn.className = 'friend-remove-btn';
         removeBtn.textContent = '✕';
@@ -618,7 +695,6 @@ function updateFriendList() {
         item.appendChild(removeBtn);
         l.appendChild(item);
 
-        // Запрашиваем аватар и статус
         socket.emit('get_avatar', { username: u });
         socket.emit('check_status', { username: u });
     });
@@ -633,9 +709,7 @@ function updateFriendList() {
 
 socket.on('friend_online', function(d) {
     const s = document.getElementById('status_' + d.username);
-    if (s) {
-        s.textContent = d.online ? '🟢 Онлайн' : '⚫ Оффлайн';
-    }
+    if (s) s.textContent = d.online ? '🟢 Онлайн' : '⚫ Оффлайн';
 });
 
 socket.on('friend_avatar', function(d) {
@@ -649,7 +723,7 @@ socket.on('friend_avatar', function(d) {
 // КОМНАТЫ
 // ============================================================
 function updateRoomList() {
-    document.getElementById('roomList').innerHTML = '<div class="chat-item active" onclick="switchRoom(\'Общий\')" data-room="Общий"><div class="chat-avatar">🌍</div><span>Общий канал</span></div>';
+    document.getElementById('roomList').innerHTML = '<div class="chat-item" onclick="switchRoom(\'Общий\')" data-room="Общий"><div class="chat-avatar">🌍</div><span>Общий канал</span></div>';
 }
 
 function openFriendModal() {
@@ -660,21 +734,13 @@ function openFriendModal() {
 
 function sendFriendReq() {
     const t = document.getElementById('searchUser').value.trim();
-    if (!t) {
-        document.getElementById('friendError').textContent = 'Введите username';
-        return;
-    }
+    if (!t) { document.getElementById('friendError').textContent = 'Введите username'; return; }
     socket.emit('send_friend_request', { my_username: myData.username, target_username: t });
     closeModal('friendOverlay');
 }
 
-function acceptFriend(u) {
-    socket.emit('accept_friend', { my_username: myData.username, target_username: u });
-}
-
-function declineFriend(u) {
-    socket.emit('decline_friend', { my_username: myData.username, target_username: u });
-}
+function acceptFriend(u) { socket.emit('accept_friend', { my_username: myData.username, target_username: u }); }
+function declineFriend(u) { socket.emit('decline_friend', { my_username: myData.username, target_username: u }); }
 
 function removeFriend(u) {
     if (!confirm('Удалить @' + u + ' из друзей?')) return;
@@ -682,11 +748,7 @@ function removeFriend(u) {
 }
 
 function viewProfile(u) {
-    if (u === myData.username) {
-        openModal('profileOverlay');
-        loadProfile();
-        return;
-    }
+    if (u === myData.username) { openModal('profileOverlay'); loadProfile(); return; }
     socket.emit('get_user_profile', { username: u, requester: myData.username });
 }
 
@@ -694,10 +756,7 @@ function viewProfile(u) {
 // ПРОСМОТР ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ (БЕЗ XSS)
 // ============================================================
 socket.on('user_profile', function(d) {
-    if (d.error) {
-        showToast(d.error, 'error');
-        return;
-    }
+    if (d.error) { showToast(d.error, 'error'); return; }
 
     const content = document.getElementById('userProfileContent');
     content.innerHTML = '';
@@ -705,31 +764,26 @@ socket.on('user_profile', function(d) {
     const modal = document.createElement('div');
     modal.style.cssText = 'width:100%;';
 
-    // Заголовок
     const h2 = document.createElement('h2');
     h2.textContent = '👤 Профиль';
     modal.appendChild(h2);
 
-    // Аватар
     const avatarImg = document.createElement('img');
     avatarImg.className = 'avatar-large';
     avatarImg.src = safeAvatarUrl(d.user.avatar, d.username);
     avatarImg.alt = 'Аватар';
     modal.appendChild(avatarImg);
 
-    // Имя
     const nameDiv = document.createElement('div');
     nameDiv.style.cssText = 'text-align:center;font-size:1.2rem;font-weight:700;';
     nameDiv.textContent = d.user.display_name || d.username;
     modal.appendChild(nameDiv);
 
-    // Username
     const unameDiv = document.createElement('div');
     unameDiv.style.cssText = 'text-align:center;color:var(--text-secondary);';
     unameDiv.textContent = '@' + d.username;
     modal.appendChild(unameDiv);
 
-    // Роль
     const roleNames = {'owner': '👑 Владелец', 'admin': '🛡️ Админ', 'moderator': '🛡️ Модер', 'user': '👤 Пользователь'};
     const roleColors = {'owner': '#f59e0b', 'admin': '#ef4444', 'moderator': '#10b981', 'user': '#94a3b8'};
     const roleDiv = document.createElement('div');
@@ -737,7 +791,6 @@ socket.on('user_profile', function(d) {
     roleDiv.textContent = roleNames[d.user.role] || '👤 Пользователь';
     modal.appendChild(roleDiv);
 
-    // Статус
     const statusDiv = document.createElement('div');
     statusDiv.style.cssText = 'text-align:center;font-size:0.75rem;color:var(--text-secondary);margin-top:4px;';
     if (d.user.online) {
@@ -747,13 +800,11 @@ socket.on('user_profile', function(d) {
     }
     modal.appendChild(statusDiv);
 
-    // Био
     const bioDiv = document.createElement('div');
     bioDiv.style.cssText = 'text-align:center;margin:10px 0;padding:8px;background:var(--surface);border-radius:8px;';
     bioDiv.textContent = d.user.bio || '';
     modal.appendChild(bioDiv);
 
-    // Друзья
     const friendsDiv = document.createElement('div');
     friendsDiv.style.cssText = 'display:flex;gap:20px;justify-content:center;margin:10px 0;color:var(--text-secondary);font-size:0.85rem;';
     const friendsSpan = document.createElement('span');
@@ -761,7 +812,6 @@ socket.on('user_profile', function(d) {
     friendsDiv.appendChild(friendsSpan);
     modal.appendChild(friendsDiv);
 
-    // Кнопки действий
     const isF = myData.friends && myData.friends.indexOf(d.username) !== -1;
     const isR = myData.requests && myData.requests.indexOf(d.username) !== -1;
     const isBy = d.user.requests && d.user.requests.indexOf(myData.username) !== -1;
@@ -770,18 +820,13 @@ socket.on('user_profile', function(d) {
         const btn = document.createElement('button');
         btn.className = 'btn btn-primary';
         btn.textContent = '📨 Добавить в друзья';
-        btn.addEventListener('click', function() {
-            sendFriendReqTo(d.username);
-        });
+        btn.addEventListener('click', function() { sendFriendReqTo(d.username); });
         modal.appendChild(btn);
     } else if (isR) {
         const btn = document.createElement('button');
         btn.className = 'btn btn-primary';
         btn.textContent = '✓ Принять запрос';
-        btn.addEventListener('click', function() {
-            acceptFriend(d.username);
-            closeModal('userProfileOverlay');
-        });
+        btn.addEventListener('click', function() { acceptFriend(d.username); closeModal('userProfileOverlay'); });
         modal.appendChild(btn);
     } else if (isBy) {
         const btn = document.createElement('button');
@@ -793,29 +838,20 @@ socket.on('user_profile', function(d) {
         const btn = document.createElement('button');
         btn.className = 'btn btn-primary';
         btn.textContent = '💬 Написать';
-        btn.addEventListener('click', function() {
-            startDM(d.username);
-            closeModal('userProfileOverlay');
-        });
+        btn.addEventListener('click', function() { startDM(d.username); closeModal('userProfileOverlay'); });
         modal.appendChild(btn);
     }
 
-    // Кнопка звонка
     const callBtn = document.createElement('button');
     callBtn.className = 'btn btn-primary';
     callBtn.textContent = '📞 Позвонить';
-    callBtn.addEventListener('click', function() {
-        startCall(d.username);
-    });
+    callBtn.addEventListener('click', function() { startCall(d.username); });
     modal.appendChild(callBtn);
 
-    // Кнопка закрыть
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn btn-secondary';
     closeBtn.textContent = 'Закрыть';
-    closeBtn.addEventListener('click', function() {
-        closeModal('userProfileOverlay');
-    });
+    closeBtn.addEventListener('click', function() { closeModal('userProfileOverlay'); });
     modal.appendChild(closeBtn);
 
     content.appendChild(modal);
@@ -828,9 +864,7 @@ function sendFriendReqTo(u) {
     closeModal('userProfileOverlay');
 }
 
-socket.on('friend_msg', function(d) {
-    showToast(d.text, d.type || 'info');
-});
+socket.on('friend_msg', function(d) { showToast(d.text, d.type || 'info'); });
 
 socket.on('incoming_friend_request', function(d) {
     if (myData && d.user && d.user.username === myData.username) {
@@ -869,6 +903,8 @@ function startDM(u) {
 function switchRoom(r) {
     currentRoom = r;
     document.getElementById('messages').innerHTML = '';
+    replyTo = null;
+    cancelReply();
 
     if (r === 'Общий') {
         document.getElementById('chatHeader').textContent = '# Общий канал';
@@ -877,7 +913,6 @@ function switchRoom(r) {
         document.getElementById('chatHeader').textContent = dmUser ? '💬 @' + dmUser : '💬 Личные сообщения';
     }
 
-    // Подсветка активного чата
     const items = document.querySelectorAll('.chat-item');
     for (let i = 0; i < items.length; i++) {
         items[i].classList.toggle('active', items[i].getAttribute('data-room') === r);
@@ -889,16 +924,12 @@ function switchRoom(r) {
         socket.emit('mark_read', { room: r, username: myData.username });
     }
 
-    // Мобильная версия: скрываем сайдбар
     if (window.innerWidth <= 480) {
         document.getElementById('sidebar').classList.add('hidden');
     }
 
-    // Очищаем уведомления от этого пользователя
     if (r.startsWith('dm_') && dmUser) {
-        notifications = notifications.filter(function(n) {
-            return n.from !== dmUser;
-        });
+        notifications = notifications.filter(function(n) { return n.from !== dmUser; });
         updateBadge();
     }
 }
@@ -908,19 +939,45 @@ function goBack() {
 }
 
 // ============================================================
+// ОТВЕТ НА СООБЩЕНИЕ (REPLY)
+// ============================================================
+function replyToMessage(msgId, author, preview) {
+    replyTo = msgId;
+    document.getElementById('replyBarText').textContent = '↩ ' + author + ': ' + preview;
+    document.getElementById('replyBar').classList.add('show');
+    document.getElementById('msgInput').focus();
+}
+
+function cancelReply() {
+    replyTo = null;
+    document.getElementById('replyBar').classList.remove('show');
+    document.getElementById('replyBarText').textContent = '';
+}
+
+// ============================================================
 // СООБЩЕНИЯ
 // ============================================================
 function sendMsg() {
     const i = document.getElementById('msgInput');
     const t = i.value.trim();
-    if (!t || !myData) return;
-    socket.emit('message', {
+    if (!myData) return;
+    if (!t) return;
+
+    const msgData = {
         room: currentRoom,
         text: t,
         user: myData.display_name,
         username: myData.username,
         avatar: myData.avatar
-    });
+    };
+
+    // Добавляем reply_to если отвечаем
+    if (replyTo) {
+        msgData.reply_to = replyTo;
+        cancelReply();
+    }
+
+    socket.emit('message', msgData);
     i.value = '';
 }
 
@@ -929,16 +986,37 @@ function deleteMessage(msgId) {
     socket.emit('delete_message', { msg_id: msgId, username: myData.username });
 }
 
+function getAllMessages() {
+    // Возвращает массив всех сообщений из DOM
+    const msgs = [];
+    const msgElements = document.querySelectorAll('.msg');
+    msgElements.forEach(function(el) {
+        msgs.push({
+            id: el.getAttribute('data-msg-id'),
+            username: el.getAttribute('data-username'),
+            user: el.getAttribute('data-user'),
+            text: el.getAttribute('data-text') || ''
+        });
+    });
+    return msgs;
+}
+
 function renderMessage(m) {
     const b = document.getElementById('messages');
     if (b.querySelector('.empty-chat')) b.innerHTML = '';
 
     const isMy = m.username === (myData ? myData.username : '');
     const canDel = myData && (myData.role === 'owner' || myData.role === 'admin' || myData.role === 'moderator');
+    const hasImage = m.image && m.image.startsWith('data:image/');
+    const hasReply = m.reply_to && !m.image; // reply_to - ID сообщения, на которое отвечаем
 
     // Контейнер сообщения
     const msgDiv = document.createElement('div');
     msgDiv.className = 'msg' + (isMy ? ' my' : '');
+    msgDiv.setAttribute('data-msg-id', m.id || m.timestamp || '');
+    msgDiv.setAttribute('data-username', m.username || '');
+    msgDiv.setAttribute('data-user', m.user || '');
+    msgDiv.setAttribute('data-text', m.text || '');
 
     // Аватар
     const avatarUrl = safeAvatarUrl(m.avatar, m.username);
@@ -968,24 +1046,82 @@ function renderMessage(m) {
         bubble.appendChild(author);
     }
 
-    // Текст
-    const textNode = document.createTextNode(m.text);
-    bubble.appendChild(textNode);
+    // Цитата (reply)
+    if (hasReply) {
+        const replyDiv = document.createElement('div');
+        replyDiv.className = 'msg-reply';
 
-    // Статус прочтения
-    if (isMy) {
-        const readMark = document.createElement('span');
-        readMark.style.cssText = 'font-size:0.75rem;font-weight:bold;';
-        if (m.read) {
-            readMark.textContent = '✓✓';
-            readMark.style.color = '#38bdf8';
-        } else {
-            readMark.textContent = '✓';
-            readMark.style.color = '#7c5cfc';
-        }
-        bubble.appendChild(document.createTextNode(' '));
-        bubble.appendChild(readMark);
+        const replyName = document.createElement('span');
+        replyName.className = 'msg-reply-name';
+        replyName.textContent = '↩ ' + (m.reply_author || 'Сообщение');
+
+        const replyPreview = document.createElement('span');
+        replyPreview.className = 'msg-reply-preview';
+        replyPreview.textContent = ': ' + (m.reply_text || '').substring(0, 50);
+
+        replyDiv.appendChild(replyName);
+        replyDiv.appendChild(replyPreview);
+
+        // Клик по цитате скроллит к оригинальному сообщению
+        replyDiv.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const origMsg = document.querySelector('[data-msg-id="' + escapeHtml(m.reply_to) + '"]');
+            if (origMsg) {
+                origMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                origMsg.style.boxShadow = '0 0 20px var(--primary)';
+                setTimeout(function() { origMsg.style.boxShadow = ''; }, 1500);
+            }
+        });
+
+        bubble.appendChild(replyDiv);
     }
+
+    // Текст (только если не изображение)
+    if (m.text && !hasImage) {
+        const textNode = document.createTextNode(m.text);
+        bubble.appendChild(textNode);
+    }
+
+    // Изображение
+    if (hasImage) {
+        const img = document.createElement('img');
+        img.className = 'msg-image';
+        img.src = sanitizeUrl(m.image);
+        img.alt = 'Изображение';
+        img.loading = 'lazy';
+        img.addEventListener('click', function(e) {
+            e.stopPropagation();
+            openLightbox(sanitizeUrl(m.image));
+        });
+        bubble.appendChild(img);
+
+        // Если есть и текст и изображение — текст перед картинкой
+        if (m.text) {
+            const textDiv = document.createElement('div');
+            textDiv.style.marginBottom = '6px';
+            textDiv.textContent = m.text;
+            bubble.insertBefore(textDiv, img);
+        }
+    }
+
+    // Время отправки
+    const timeSpan = document.createElement('span');
+    timeSpan.style.cssText = 'font-size:0.7rem;opacity:0.7;margin-left:6px;white-space:nowrap;';
+    timeSpan.textContent = formatMsgTime(m.timestamp);
+    bubble.appendChild(timeSpan);
+
+    // Кнопка ответа (reply) — показывается всегда при наведении
+    const replyBtn = document.createElement('span');
+    replyBtn.style.cssText = 'cursor:pointer;font-size:0.7rem;opacity:0;margin-left:8px;transition:opacity 0.2s;';
+    replyBtn.textContent = '↩';
+    replyBtn.title = 'Ответить';
+    replyBtn.addEventListener('mouseenter', function() { this.style.opacity = '1'; });
+    replyBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const preview = (m.text || (m.image ? '[Изображение]' : '')).substring(0, 50);
+        replyToMessage(m.id || m.timestamp, m.user || m.username, preview);
+    });
+    bubble.appendChild(replyBtn);
 
     // Кнопка удаления
     if (canDel) {
@@ -1011,7 +1147,7 @@ function renderMessage(m) {
 // ============================================================
 let typingTimer;
 document.getElementById('msgInput').addEventListener('input', function() {
-    if (currentRoom.startsWith('dm_')) {
+    if (currentRoom && currentRoom.startsWith('dm_')) {
         socket.emit('typing', { room: currentRoom, username: myData.username, user: myData.display_name });
     }
 });
@@ -1028,6 +1164,7 @@ socket.on('user_typing', function(d) {
 // СОБЫТИЯ SOCKET
 // ============================================================
 function normalizeRoom(room) {
+    if (!room) return '';
     if (room.startsWith('dm_')) {
         const parts = room.split('_');
         if (parts.length >= 3) {
@@ -1057,19 +1194,10 @@ socket.on('message_deleted', function() {
     socket.emit('join', { room: currentRoom });
 });
 
+// Обработчик messages_read — обновлён для проверки структуры данных
 socket.on('messages_read', function(data) {
     socket.emit('join', { room: currentRoom });
-    if (data.by !== myData.username) {
-        const msgs = document.querySelectorAll('.msg.my');
-        msgs.forEach(function(el) {
-            const mark = el.querySelector('.msg-bubble span');
-            if (mark && mark.textContent.trim() === '✓') {
-                mark.textContent = '✓✓';
-                mark.style.color = '#38bdf8';
-                mark.style.fontWeight = 'bold';
-            }
-        });
-    }
+    // После обновления не пытаемся искать ✓ в DOM — просто перезагружаем
 });
 
 socket.on('new_dm', function(data) {
@@ -1105,6 +1233,36 @@ if ('serviceWorker' in navigator) {
 // ============================================================
 // УТИЛИТА: ВРЕМЯ
 // ============================================================
+function formatMsgTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts * 1000);
+    const now = new Date();
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    const time = h + ':' + m;
+
+    if (d.toDateString() === now.toDateString()) {
+        return time;
+    }
+
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) {
+        return 'вчера ' + time;
+    }
+
+    if (d.getFullYear() === now.getFullYear()) {
+        const day = d.getDate().toString().padStart(2, '0');
+        const month = (d.getMonth() + 1).toString().padStart(2, '0');
+        return day + '.' + month + ' ' + time;
+    }
+
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const year = d.getFullYear();
+    return day + '.' + month + '.' + year + ' ' + time;
+}
+
 function timeAgo(d) {
     const s = Math.floor((new Date() - d) / 1000);
     if (s < 60) return 'только что';
@@ -1169,14 +1327,8 @@ socket.on('call_signal', (d) => {
 });
 
 function hangUp() {
-    if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
-    }
-    if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
-        localStream = null;
-    }
+    if (peerConnection) { peerConnection.close(); peerConnection = null; }
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
     currentCallUser = null;
 }
 </script>

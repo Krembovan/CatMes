@@ -68,7 +68,11 @@ def init_db():
             username TEXT NOT NULL,
             user TEXT NOT NULL,
             avatar TEXT DEFAULT '',
-            text TEXT NOT NULL,
+            text TEXT DEFAULT '',
+            image TEXT DEFAULT '',
+            reply_to TEXT DEFAULT '',
+            reply_author TEXT DEFAULT '',
+            reply_text TEXT DEFAULT '',
             timestamp REAL NOT NULL,
             read INTEGER DEFAULT 0
         );
@@ -79,7 +83,29 @@ def init_db():
     conn.commit()
     conn.close()
 
+def migrate_add_new_columns():
+    """Добавить колонки image, reply_to, reply_author, reply_text если их нет."""
+    db = get_db()
+    try:
+        db.execute("ALTER TABLE messages ADD COLUMN image TEXT DEFAULT ''")
+    except:
+        pass
+    try:
+        db.execute("ALTER TABLE messages ADD COLUMN reply_to TEXT DEFAULT ''")
+    except:
+        pass
+    try:
+        db.execute("ALTER TABLE messages ADD COLUMN reply_author TEXT DEFAULT ''")
+    except:
+        pass
+    try:
+        db.execute("ALTER TABLE messages ADD COLUMN reply_text TEXT DEFAULT ''")
+    except:
+        pass
+    db.commit()
+
 init_db()
+migrate_add_new_columns()
 
 # ============================================================
 # УТИЛИТЫ РАБОТЫ С БД
@@ -135,8 +161,8 @@ def save_message(msg: dict):
     db = get_db()
     msg['id'] = msg.get('id', str(uuid.uuid4()))
     db.execute('''
-        INSERT OR IGNORE INTO messages (id, room, username, user, avatar, text, timestamp, read)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO messages (id, room, username, user, avatar, text, image, reply_to, reply_author, reply_text, timestamp, read)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         msg['id'],
         msg.get('room', 'Общий'),
@@ -144,6 +170,10 @@ def save_message(msg: dict):
         msg.get('user', ''),
         msg.get('avatar', ''),
         msg.get('text', ''),
+        msg.get('image', ''),
+        msg.get('reply_to', ''),
+        msg.get('reply_author', ''),
+        msg.get('reply_text', ''),
         msg.get('timestamp', time.time()),
         int(msg.get('read', False))
     ))
@@ -182,7 +212,6 @@ def get_role(username: str) -> str:
     saved_role = user.get('role', 'user') if user else 'user'
     role = auth.get_role(username.lower(), saved_role)
 
-    # Если роль изменилась (например, владелец в DEFAULT_ROLES), обновляем БД
     if user and user.get('role') != role:
         user['role'] = role
         save_user(username.lower(), user)
@@ -213,11 +242,10 @@ def notify_friends(username: str, event: str, data: dict):
 # ============================================================
 def migrate_json_to_sqlite():
     """Перенести данные из старых JSON-файлов в SQLite (если нужно)."""
-    # Проверяем, есть ли уже пользователи в БД
     db = get_db()
     count = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     if count > 0:
-        return  # Уже мигрировали
+        return
 
     users_path = os.path.join(DATA_DIR, 'users.json')
     messages_path = os.path.join(DATA_DIR, 'messages.json')
@@ -227,7 +255,6 @@ def migrate_json_to_sqlite():
             users = json.load(f)
         for username, data in users.items():
             if 'pass' in data and not data.get('password_hash'):
-                # Мигрируем старый пароль в хеш через auth.py
                 data['password_hash'] = auth.hash_password(data.pop('pass', ''))
             elif 'pass' in data:
                 del data['pass']
@@ -468,7 +495,6 @@ def handle_auth(data):
     pwd = data.get('password', '')
     pwd2 = data.get('password2', '')
 
-    # Валидация через auth.py
     valid_un, un = auth.validate_username(un)
     if not valid_un:
         emit('auth_result', {'success': False, 'error': un})
@@ -514,7 +540,6 @@ def handle_auth(data):
         emit('auth_result', {'success': True, 'user': safe_user_for_client(new_user)})
 
     else:  # login
-        # Проверка rate limit
         allowed, error = auth.check_login_rate_limit(un)
         if not allowed:
             emit('auth_result', {'success': False, 'error': error})
@@ -531,7 +556,6 @@ def handle_auth(data):
             emit('auth_result', {'success': False, 'error': 'Неверный пароль'})
             return
 
-        # Проверить, не нужно ли обновить хеш (для будущих апгрейдов)
         if auth.needs_password_rehash(user.get('password_hash', '')):
             user['password_hash'] = auth.hash_password(pwd)
             save_user(un, user)
@@ -564,13 +588,12 @@ def handle_profile_update(data):
             user['display_name'] = dn
 
     if 'bio' in data:
-        user['bio'] = data['bio'].strip()[:200]  # Ограничение длины
+        user['bio'] = data['bio'].strip()[:200]
 
     if data.get('avatar', '').strip():
         avatar = data['avatar'].strip()
-        # Базовая проверка URL
         if avatar.startswith('http://') or avatar.startswith('https://'):
-            user['avatar'] = avatar[:500]  # Ограничение длины
+            user['avatar'] = avatar[:500]
 
     save_user(un, user)
     emit('profile_updated', {'user': safe_user_for_client(user)})
@@ -729,8 +752,17 @@ def handle_delete_message(data):
 def handle_msg(data):
     room = data.get('room', 'Общий')
     text = data.get('text', '').strip()
+    image = data.get('image', '').strip()
+    reply_to = data.get('reply_to', '')
 
-    if not text or len(text) > 1000:
+    # Должен быть либо текст, либо изображение
+    if not text and not image:
+        return
+    if text and len(text) > 1000:
+        return
+    if image and len(image) > 5 * 1024 * 1024:
+        return
+    if image and not image.startswith('data:image/'):
         return
 
     # Нормализация DM-комнаты
@@ -743,18 +775,30 @@ def handle_msg(data):
     data['room'] = room
     data['timestamp'] = time.time()
     data['text'] = text
+    data['image'] = image
     data['read'] = False
+
+    # Если это ответ (reply)
+    if reply_to:
+        data['reply_to'] = reply_to
+        msgs = load_messages()
+        for m in msgs:
+            if str(m.get('id')) == str(reply_to) or str(m.get('timestamp')) == str(reply_to):
+                data['reply_author'] = m.get('user') or m.get('username', '')
+                data['reply_text'] = (m.get('text') or (m.get('image') and '[Изображение]') or '')[:100]
+                break
 
     save_message(data)
 
-    # Уведомление для DM
+    preview_text = text[:30] if text else ('[Изображение]' if image else '')
+
     if room.startswith('dm_'):
         parts = room.split('_')
         for p in parts[1:]:
             if p != data.get('username', ''):
                 notify_user(p, 'new_dm', {
                     'from': data.get('username'),
-                    'text': text[:30],
+                    'text': preview_text,
                     'room': room
                 })
 
@@ -851,7 +895,7 @@ def handle_disconnect():
 @socketio.on('typing')
 def handle_typing(data):
     room = data.get('room', '')
-    if room.startswith('dm_'):
+    if room and room.startswith('dm_'):
         emit('user_typing', {
             'username': data.get('username'),
             'user': data.get('user')
