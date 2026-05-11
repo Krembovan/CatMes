@@ -203,6 +203,25 @@
             padding: 15px 20px;
             color: white;
             font-size: 1.2rem;
+            position: relative;
+        }
+        .profile-header-name {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.8rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            white-space: nowrap;
+            pointer-events: none;
+            color: white;
+        }
+        .legendary-profile .profile-header-name {
+            color: #fff8e0;
+            text-shadow: 0 0 20px rgba(255,215,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
         }
         .profile-edit-btn, .profile-close-btn {
             cursor: pointer;
@@ -542,6 +561,7 @@
     <div class="modal profile-modal" id="profileModal">
         <div class="profile-header">
             <button class="profile-edit-btn" id="editProfileBtn" title="Редактировать профиль" style="display:none;">✏️</button>
+            <div class="profile-header-name" id="profileHeaderName"></div>
             <button class="profile-close-btn" onclick="closeModal('profileOverlay'); isEditingProfile = false; document.getElementById('profileModal').classList.remove('edit-mode'); document.querySelector('.profile-actions').classList.remove('show');">✕</button>
         </div>
         <div class="profile-avatar-container" id="profileAvatarContainer">
@@ -1688,6 +1708,7 @@ function updateProfileUI(user, isOwner) {
     }
     document.getElementById('profileAvatar').src = safeAvatarUrl(user.avatar, user.username);
     document.getElementById('profileDisplayName').textContent = user.display_name || user.username || 'User';
+    document.getElementById('profileHeaderName').textContent = user.display_name || user.username || '';
     document.getElementById('profileHandle').textContent = '@' + user.username;
     const isOnline = user.online || false;
     const dot = document.getElementById('profileStatusDot');
