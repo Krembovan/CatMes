@@ -280,6 +280,9 @@ def handle_accept(data):
     award_achievement(my_un, 'first_friend')
     if len(user.get('friends', [])) >= 5:
         award_achievement(my_un, 'soul_company')
+    award_achievement(target_un, 'first_friend')
+    if target_un in users and len(users[target_un].get('friends', [])) >= 5:
+        award_achievement(target_un, 'soul_company')
     emit('auth_result', {'success': True, 'user': user})
     notify_user(target_un, 'friend_accepted_notify', {'user': users.get(target_un), 'by': my_un})
 
