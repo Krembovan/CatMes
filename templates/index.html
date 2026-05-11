@@ -147,27 +147,27 @@
         .legendary-profile .profile-modal::before {
             content: '';
             position: absolute;
-            top: 0; left: -100%;
-            width: 60%;
+            top: 0; left: -30%;
+            width: 18%;
             height: 100%;
             background: linear-gradient(
                 135deg,
                 transparent 0%,
-                rgba(255, 215, 0, 0.06) 30%,
-                rgba(255, 215, 0, 0.12) 50%,
-                rgba(255, 215, 0, 0.06) 70%,
+                rgba(255, 215, 0, 0.08) 30%,
+                rgba(255, 215, 0, 0.15) 50%,
+                rgba(255, 215, 0, 0.08) 70%,
                 transparent 100%
             );
             transform: skewX(-20deg);
-            animation: goldenSweep 6s ease-in-out infinite;
+            animation: goldenSweep 8s ease-in-out infinite;
             pointer-events: none;
             z-index: 1;
         }
         @keyframes goldenSweep {
-            0% { left: -100%; }
-            30% { left: -100%; }
-            50% { left: 100%; }
-            100% { left: 100%; }
+            0% { left: -30%; }
+            40% { left: -30%; }
+            60% { left: 110%; }
+            100% { left: 110%; }
         }
         .legendary-profile .profile-header {
             background: linear-gradient(135deg, #b8860b, #ffd700, #f59e0b);
