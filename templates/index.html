@@ -1232,15 +1232,32 @@ function showFolderManager() {
 }
 
 function createFolder() {
-    const name = prompt('Название папки (макс 20 символов):');
-    if (!name || !name.trim()) return;
-    if (name.length > 20) { showToast('Максимум 20 символов', 'error'); return; }
-    const fid = 'folder_' + Date.now();
-    folders[fid] = { id: fid, name: name.trim(), chats: [] };
-    saveFolders();
-    updateFolderTabs();
     document.querySelector('.modal-overlay.active')?.remove();
-    showFolderManager();
+    const html = '<h3 style="text-align:center;margin:0 0 15px;">📂 Новая папка</h3>' +
+        '<input type="text" id="folderNameInput" placeholder="Название" maxlength="20" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:1rem;box-sizing:border-box;outline:none;" autofocus>' +
+        '<div style="display:flex;gap:8px;margin-top:15px;">' +
+        '<button class="btn-secondary" onclick="this.closest(\'.modal-overlay\').remove()" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:600;cursor:pointer;">Отмена</button>' +
+        '<button class="btn btn-primary" id="createFolderConfirmBtn" style="flex:1;padding:10px;border-radius:10px;">Создать</button></div>';
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.style.position = 'fixed';
+    modal.innerHTML = '<div class="modal" style="max-width:320px;padding:20px;">' + html + '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('folderNameInput').focus();
+    document.getElementById('createFolderConfirmBtn').addEventListener('click', function() {
+        var name = document.getElementById('folderNameInput').value.trim();
+        if (!name) { showToast('Введите название', 'error'); return; }
+        if (name.length > 20) { showToast('Максимум 20 символов', 'error'); return; }
+        var fid = 'folder_' + Date.now();
+        folders[fid] = { id: fid, name: name, chats: [] };
+        saveFolders();
+        updateFolderTabs();
+        document.querySelector('.modal-overlay.active')?.remove();
+        showFolderManager();
+    });
+    document.getElementById('folderNameInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { document.getElementById('createFolderConfirmBtn').click(); }
+    });
 }
 
 function deleteFolder(fid) {
