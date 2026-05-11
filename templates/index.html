@@ -136,21 +136,38 @@
         }
         .legendary-profile .profile-modal {
             border: 2px solid rgba(255, 215, 0, 0.6);
-            background: linear-gradient(135deg, #1a1a1a, #1f1d14, #1a1a1a, #1f1d14);
-            background-size: 400% 400%;
-            animation: legendaryBg 8s ease-in-out infinite alternate;
+            position: relative;
+            overflow: hidden;
             box-shadow:
                 0 0 40px rgba(255, 215, 0, 0.25),
                 0 0 80px rgba(255, 215, 0, 0.1),
                 0 0 120px rgba(255, 215, 0, 0.05),
                 inset 0 0 30px rgba(255, 215, 0, 0.03);
         }
-        @keyframes legendaryBg {
-            0% { background-position: 0% 50%; }
-            100% { background-position: 100% 50%; }
+        .legendary-profile .profile-modal::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%;
+            width: 60%;
+            height: 100%;
+            background: linear-gradient(
+                135deg,
+                transparent 0%,
+                rgba(255, 215, 0, 0.06) 30%,
+                rgba(255, 215, 0, 0.12) 50%,
+                rgba(255, 215, 0, 0.06) 70%,
+                transparent 100%
+            );
+            transform: skewX(-20deg);
+            animation: goldenSweep 6s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 1;
         }
-        .legendary-profile .profile-body-scroll {
-            background: rgba(255, 215, 0, 0.02);
+        @keyframes goldenSweep {
+            0% { left: -100%; }
+            30% { left: -100%; }
+            50% { left: 100%; }
+            100% { left: 100%; }
         }
         .legendary-profile .profile-header {
             background: linear-gradient(135deg, #b8860b, #ffd700, #f59e0b);
