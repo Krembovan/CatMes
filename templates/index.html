@@ -454,6 +454,12 @@
                         </div>
                         <button class="btn btn-primary" onclick="verifyTelegramCode()" id="tgVerifyBtn">✅ Подтвердить код</button>
                         <div id="tgStatus" style="font-size:0.8rem; margin-top:5px;"></div>
+                        <div class="input-group" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                            <label>🔑 Или введи инвайт-код</label>
+                            <input type="text" id="inviteCodeInput" placeholder="XXXX-XXXX" style="text-transform:uppercase;text-align:center;font-weight:700;letter-spacing:3px;">
+                        </div>
+                        <button class="btn btn-primary" onclick="verifyInviteCode()" id="inviteVerifyBtn">🔑 Применить код</button>
+                        <div id="inviteStatus" style="font-size:0.8rem; margin-top:5px;"></div>
                     </div>
                 </div>
             </div>
@@ -1646,6 +1652,39 @@ function verifyTelegramCode() {
     .catch(e => {
         btn.disabled = false;
         btn.textContent = '✅ Подтвердить код';
+        showToast('Ошибка сети', 'error');
+    });
+}
+
+function verifyInviteCode() {
+    const code = document.getElementById('inviteCodeInput').value.trim().toUpperCase();
+    if (!code) {
+        showToast('Введите инвайт-код', 'error');
+        return;
+    }
+    const btn = document.getElementById('inviteVerifyBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Проверка...';
+    fetch('/api/invite/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: myData.username, code: code })
+    })
+    .then(r => r.json())
+    .then(d => {
+        btn.disabled = false;
+        btn.textContent = '🔑 Применить код';
+        if (d.ok) {
+            showToast('Верификация пройдена!', 'success');
+            myData.telegram_verified = true;
+            loadProfile();
+        } else {
+            showToast(d.error || 'Неверный код', 'error');
+        }
+    })
+    .catch(e => {
+        btn.disabled = false;
+        btn.textContent = '🔑 Применить код';
         showToast('Ошибка сети', 'error');
     });
 }

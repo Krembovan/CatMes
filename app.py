@@ -583,7 +583,23 @@ def admin_panel():
         msg_text = m.get('text','')[:100]
         msg_ts = str(m.get('timestamp',''))
         html += f'<div class="msg-item"><b>@{html_escape(msg_user)}</b>: {html_escape(msg_text)} <button class="btn btn-sm" onclick="deleteMsg(\'{html_escape(msg_ts)}\')" style="float:right;">✕</button></div>'
-    html += '</div><script>function deleteUser(un){if(!confirm("Удалить @"+un+"?"))return;fetch("/admin/delete/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}function setRole(un,r){fetch("/admin/setrole/"+un+"/"+r,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}function deleteMsg(ts){fetch("/admin/deletemsg/"+ts,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}</script></body></html>'''
+    html += '</div>'
+    if can:
+        invites_data = load_invites()
+        total_invites = len(invites_data)
+        used_invites = sum(1 for v in invites_data.values() if v.get('used_by'))
+        html += f'<div class="section"><h2>🔑 Инвайт-коды</h2><div class="stats"><div class="stat-card"><div class="stat-value">{total_invites}</div><div class="stat-label">Всего</div></div><div class="stat-card"><div class="stat-value">{total_invites - used_invites}</div><div class="stat-label">Активных</div></div></div>'
+        html += '<button class="btn btn-sm" onclick="createInvite()" style="background:#7c5cfc;color:white;border:none;padding:10px 20px;border-radius:10px;cursor:pointer;font-weight:600;">➕ Создать код</button>'
+        html += '<div id="newCodeDisplay" style="margin-top:15px;font-size:1.2rem;font-weight:900;color:#10b981;display:none;"></div>'
+        html += '<table style="margin-top:15px;"><tr><th>Код</th><th>Создал</th><th>Статус</th></tr>'
+        for c, v in sorted(invites_data.items(), key=lambda x: x[1].get('created_at', 0), reverse=True)[:50]:
+            status = f'<span style="color:#ef4444;">Использован @{html_escape(v["used_by"])}</span>' if v.get('used_by') else '<span style="color:#10b981;">Активен</span>'
+            html += f'<tr><td style="font-family:monospace;font-weight:700;">{html_escape(c)}</td><td>@{html_escape(v.get("created_by","?"))}</td><td>{status}</td></tr>'
+        html += '</table></div>'
+        html += '<script>function createInvite(){fetch("/api/invite/create",{method:"POST",headers:{"Authorization":"Basic "+btoa("''' + html_escape(un) + '''")}}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById("newCodeDisplay").textContent="🎉 "+d.code;document.getElementById("newCodeDisplay").style.display="block";setTimeout(()=>location.reload(),2000)}else{alert(d.error)}})}</script>'
+    else:
+        html += '<script>'
+    html += '''function deleteUser(un){if(!confirm("Удалить @"+un+"?"))return;fetch("/admin/delete/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}function setRole(un,r){fetch("/admin/setrole/"+un+"/"+r,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}function deleteMsg(ts){fetch("/admin/deletemsg/"+ts,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}</script></body></html>'''
     return html
 
 @app.route('/admin/delete/<username>', methods=['POST'])
@@ -709,6 +725,75 @@ def api_verify_check():
         del pending[un]
         with open(PENDING_FILE, 'w') as f:
             json_lib.dump(pending, f)
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+# ========== ИНВАЙТ-КОДЫ ==========
+INVITE_FILE = os.path.join(DATA_DIR, "invite_codes.json")
+
+def load_invites():
+    if os.path.exists(INVITE_FILE):
+        try:
+            with open(INVITE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+def save_invites(data):
+    with open(INVITE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def generate_invite_code():
+    return secrets.token_hex(4).upper()
+
+@app.route('/api/invite/create', methods=['POST'])
+def api_create_invite():
+    auth = request.authorization
+    if not auth:
+        return {'ok': False, 'error': 'Требуется авторизация'}
+    un = auth.username.lower()
+    pw = auth.password
+    users = load_users()
+    if un not in users or not verify_password(pw, users[un].get('pass', '')):
+        return {'ok': False, 'error': 'Неверные данные'}
+    if get_role(un) not in ['owner', 'admin']:
+        return {'ok': False, 'error': 'Только админы могут создавать коды'}
+    invites = load_invites()
+    code = generate_invite_code()
+    while code in invites:
+        code = generate_invite_code()
+    invites[code] = {
+        'created_by': un,
+        'created_at': time.time(),
+        'used_by': None
+    }
+    save_invites(invites)
+    return {'ok': True, 'code': code}
+
+@app.route('/api/invite/verify', methods=['POST'])
+def api_verify_invite():
+    try:
+        data = request.get_json()
+        un = data.get('username', '').lower()
+        code = data.get('code', '').strip().upper()
+        if not un or not code:
+            return {'ok': False, 'error': 'Не указаны данные'}
+        invites = load_invites()
+        if code not in invites:
+            return {'ok': False, 'error': 'Неверный код'}
+        entry = invites[code]
+        if entry.get('used_by'):
+            return {'ok': False, 'error': 'Код уже использован'}
+        users = load_users()
+        if un not in users:
+            return {'ok': False, 'error': 'Пользователь не найден'}
+        users[un]['telegram_verified'] = True
+        users[un]['verified_by'] = 'invite'
+        save_db('users', users)
+        entry['used_by'] = un
+        save_invites(invites)
         return {'ok': True}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
