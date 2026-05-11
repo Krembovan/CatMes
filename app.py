@@ -664,7 +664,11 @@ def admin_panel():
         rn = {'owner':'Владелец','admin':'Админ','moderator':'Модер','user':'Пользователь'}.get(u['role'],u['role'])
         html += f'<tr><td>@{html_escape(u["username"])}</td><td>{html_escape(u["display_name"])}</td><td><span class="badge {bc}">{html_escape(rn)}</span></td><td>{u["xp"]}</td><td>{u["friends"]}</td><td>{u["requests"]}</td>'
         if u['role'] == 'owner':
-            html += '<td><span style="color:#f59e0b;">Владелец</span></td>'
+            html += '<td>'
+            if can_manage_roles:
+                html += f' <input type="number" id="xpInput-{html_escape(u["username"])}" min="1" value="1" style="width:50px;background:#0d1117;color:white;border:1px solid rgba(255,255,255,0.1);padding:4px;border-radius:6px;">'
+                html += f' <button class="btn btn-sm" onclick="addXp(\'{html_escape(u["username"])}\')">➕XP</button>'
+            html += '</td>'
         elif can_manage_roles:
             html += '<td>'
             html += f'<select onchange="setRole(\'{html_escape(u["username"])}\',this.value)">'
