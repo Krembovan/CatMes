@@ -160,7 +160,7 @@ def handle_auth(data):
             'username': un, 'display_name': dn or un, 'pass': hash_password(pwd),
             'avatar': f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
             'bio': 'Пользователь CAT', 'friends': [], 'requests': [], 'notifications': [], 'role': get_role(un),
-            'xp': 0, 'achievements': [], 'telegram_verified': False
+            'xp': 0, 'achievements': [], 'telegram_verified': False, 'birthday': ''
         }
         save_user(un, new_user)
         user_sessions[un] = request.sid
@@ -183,6 +183,7 @@ def handle_auth(data):
         user_data.setdefault('xp', 0)
         user_data.setdefault('achievements', [])
         user_data.setdefault('telegram_verified', False)
+        user_data.setdefault('birthday', '')
         user_sessions[un] = request.sid
         user_data['online'] = True
         user_data['last_seen'] = time.time()
@@ -200,6 +201,7 @@ def handle_profile_update(data):
         return
     if data.get('display_name', '').strip(): users[un]['display_name'] = data['display_name'].strip()
     if 'bio' in data: users[un]['bio'] = data['bio'].strip()
+    if 'birthday' in data: users[un]['birthday'] = data['birthday'].strip()
     av = data.get('avatar', '').strip()
     if av:
         av_lower = av.lower()
@@ -477,7 +479,8 @@ def handle_get_user_profile(data):
             'last_seen': user.get('last_seen', 0),
             'xp': user.get('xp', 0),
             'achievements': user.get('achievements', []),
-            'telegram_verified': user.get('telegram_verified', False)
+            'telegram_verified': user.get('telegram_verified', False),
+            'birthday': user.get('birthday', '')
         }
     })
 

@@ -355,6 +355,24 @@
         .profile-fields { display: none; }
         .edit-mode .profile-fields { display: block; }
         .edit-mode .profile-view-info { display: none; }
+        .edit-mode .tabs,
+        .edit-mode #xpBlock { display: none !important; }
+        .input-group input[type="date"] {
+            color-scheme: dark;
+            background: #1e2330;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 12px;
+            color: #e2e8f0;
+            font-size: 0.9rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .profile-birthday-view {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
@@ -406,6 +424,7 @@
                     <span id="profileFriendsCount">0 друзей</span> · <span class="online-dot">🟢</span> онлайн
                 </div>
                 <div id="profileRole"></div>
+                <div class="profile-birthday-view" id="profileBirthdayView"></div>
             </div>
 
 
@@ -439,6 +458,10 @@
                         <div class="input-group">
                             <label>О СЕБЕ</label>
                             <textarea id="profileBio" placeholder="Расскажите о себе..." rows="3"></textarea>
+                        </div>
+                        <div class="input-group">
+                            <label>ДАТА РОЖДЕНИЯ</label>
+                            <input type="date" id="profileBirthday">
                         </div>
                     </div>
                     <div class="profile-actions">
@@ -1393,6 +1416,10 @@ document.getElementById('editProfileBtn').addEventListener('click', () => {
     if (isEditingProfile) {
         modal.classList.add('edit-mode');
         actions.classList.add('show');
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.tab[data-tab="info"]').classList.add('active');
+        document.getElementById('tab-achievements').style.display = 'none';
+        document.getElementById('tab-info').style.display = 'block';
     } else {
         modal.classList.remove('edit-mode');
         actions.classList.remove('show');
@@ -1421,9 +1448,22 @@ function updateProfileUI(user, isOwner) {
     const actions = document.querySelector('.profile-actions');
     if (actions) actions.classList.remove('show');
 
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('.tab[data-tab="info"]').classList.add('active');
+    document.getElementById('tab-achievements').style.display = 'none';
+    document.getElementById('tab-info').style.display = 'block';
+
     document.getElementById('profileName').value = user.display_name || '';
     document.getElementById('profileBio').value = user.bio || '';
     document.getElementById('profileBioView').textContent = user.bio || 'Нет описания';
+    document.getElementById('profileBirthday').value = user.birthday || '';
+    const bdayView = document.getElementById('profileBirthdayView');
+    if (user.birthday) {
+        const parts = user.birthday.split('-');
+        bdayView.textContent = '🎂 ' + parts[2] + '.' + parts[1] + '.' + parts[0];
+    } else {
+        bdayView.textContent = '';
+    }
     document.getElementById('profileAvatar').src = safeAvatarUrl(user.avatar, user.username);
     document.getElementById('profileDisplayName').textContent = user.display_name || user.username;
     document.getElementById('profileHandle').textContent = '@' + user.username;
@@ -1515,9 +1555,11 @@ function renderAchievements(achievements, isOwner) {
 function saveProfile() {
     const n = document.getElementById('profileName').value.trim();
     const b = document.getElementById('profileBio').value.trim();
+    const bday = document.getElementById('profileBirthday').value;
     const newAvatar = document.getElementById('profileAvatar').getAttribute('data-new-avatar') || '';
     if (!n) { showToast('Имя обязательно', 'error'); return; }
     const data = { username: myData.username, display_name: n, bio: b };
+    if (bday) data.birthday = bday;
     if (newAvatar) data.avatar = newAvatar;
     socket.emit('update_profile', data);
 }
