@@ -625,6 +625,7 @@ function sanitizeUrl(url) {
     if (lower.startsWith('javascript:')) return '';
     if (lower.startsWith('data:') && !lower.startsWith('data:image/')) return '';
     if (lower.startsWith('/uploads/')) return url;
+    if (lower.startsWith('data:image/')) return url;
     if (lower.startsWith('http://') || lower.startsWith('https://')) return url;
     return '';
 }
