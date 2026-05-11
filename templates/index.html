@@ -335,6 +335,16 @@
         .achieved { color: #10b981; }
         .locked { color: #ef4444; opacity: 0.6; }
         .in-progress { color: #f59e0b; }
+        .achievement.legendary {
+            border-color: rgba(255, 215, 0, 0.5);
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.08), rgba(255, 215, 0, 0.02));
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.1);
+        }
+        .achievement.secret {
+            border-color: rgba(239, 68, 68, 0.5);
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(239, 68, 68, 0.02));
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.1);
+        }
         .avatar-menu {
             display: none;
             position: absolute;
@@ -1623,14 +1633,21 @@ function renderAchievements(achievements, isOwner) {
     const container = document.getElementById('achievementsContent');
     container.innerHTML = '';
     const templates = [
-        { id: 'first_msg', icon: '🐱', name: 'Первый мяу', desc: 'Отправить первое сообщение в чат' },
-        { id: 'first_friend', icon: '🤝', name: 'Первый друг', desc: 'Добавить одного друга' },
-        { id: 'soul_company', icon: '🎉', name: 'Душа компании', desc: 'Иметь 5 друзей одновременно' },
-        { id: 'talkative', icon: '💬', name: 'Общительный', desc: 'Написать в общий канал сегодня' },
-        { id: 'daily_login', icon: '📅', name: 'Ежедневный вход', desc: 'Зайти в чат сегодня' },
-        { id: 'weekly_marathon', icon: '🔥', name: 'Недельный марафон', desc: 'Заходить 7 дней подряд' },
-        { id: 'bio', icon: '✏️', name: 'Биограф', desc: 'Заполнить описание профиля' },
-        { id: 'avatar', icon: '🖼️', name: 'Аватар', desc: 'Загрузить собственное фото' }
+        { id: 'first_msg', icon: '🐱', name: 'Первый мяу', desc: 'Отправить первое сообщение в чат', xp: 25 },
+        { id: 'first_friend', icon: '🤝', name: 'Первый друг', desc: 'Добавить одного друга', xp: 25 },
+        { id: 'soul_company', icon: '🎉', name: 'Душа компании', desc: 'Иметь 5 друзей одновременно', xp: 50 },
+        { id: 'talkative', icon: '💬', name: 'Общительный', desc: 'Написать в общий канал сегодня', xp: 25 },
+        { id: 'daily_login', icon: '📅', name: 'Ежедневный вход', desc: 'Зайти в чат сегодня', xp: 25 },
+        { id: 'weekly_marathon', icon: '🔥', name: 'Недельный марафон', desc: 'Заходить 7 дней подряд', xp: 100 },
+        { id: 'bio', icon: '✏️', name: 'Биограф', desc: 'Заполнить описание профиля', xp: 25 },
+        { id: 'avatar', icon: '🖼️', name: 'Аватар', desc: 'Загрузить собственное фото', xp: 25 },
+        { id: 'first_spark', icon: '✨', name: 'Первый огонёк', desc: 'Отправить 10 сообщений подряд в одном чате', xp: 10 },
+        { id: 'night_chatter', icon: '🌙', name: 'Ночной чатер', desc: 'Написать сообщение с 00:00 до 5:00', xp: 25 },
+        { id: 'friend_specialist', icon: '🤝', name: 'Специалист по связям', desc: 'Добавить 15 друзей', xp: 30 },
+        { id: 'media_master', icon: '📸', name: 'Медиа-мастер', desc: 'Отправить 10 фото за 1 день', xp: 10 },
+        { id: 'sprinter', icon: '🏃', name: 'Спринтер', desc: 'Написать 100 сообщений за 24 часа', xp: 20 },
+        { id: 'dictator', icon: '👑', name: 'Диктатор', desc: 'Стать модератором', xp: 150, type: 'legendary' },
+        { id: 'pioneer', icon: '🏆', name: 'Первопроходец', desc: 'Стать одним из первых 50 пользователей', xp: 300, type: 'secret' }
     ];
 
     templates.forEach(t => {
@@ -1640,13 +1657,14 @@ function renderAchievements(achievements, isOwner) {
         const div = document.createElement('div');
         div.className = 'achievement';
         if (achieved) div.classList.add('achieved');
+        if (t.type) div.classList.add(t.type);
         div.innerHTML = `
             <span class="icon">${t.icon}</span>
             <div class="info">
                 <div class="name">${t.name}</div>
                 <div class="desc">${t.desc}</div>
             </div>
-            <span class="status ${achieved ? 'achieved' : 'locked'}">${achieved ? '✓ 25 XP' : 'Не получено'}</span>
+            <span class="status ${achieved ? 'achieved' : 'locked'}">${achieved ? '✓ ' + t.xp + ' XP' : 'Не получено'}</span>
         `;
         container.appendChild(div);
     });

@@ -15,6 +15,7 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 user_sessions = {}
 last_action = {}
+consecutive_msgs = {}
 
 def load_db(key):
     path = os.path.join(DATA_DIR, f'{key}.json')
@@ -124,6 +125,29 @@ def sync_roles():
 
 sync_roles()
 
+def migrate_created_at():
+    users = load_users()
+    changed = False
+    base_time = time.time() - (len(users) * 3600)
+    for i, (un, u) in enumerate(users.items()):
+        if 'created_at' not in u:
+            u['created_at'] = base_time + (i * 3600)
+            changed = True
+    if changed:
+        save_db('users', users)
+
+migrate_created_at()
+
+def check_pioneer(username):
+    users = load_users()
+    if username not in users:
+        return
+    ordered = list(users.items())
+    for i, (un, _) in enumerate(ordered):
+        if un == username and i < 50:
+            award_achievement(username, 'pioneer')
+            return
+
 def get_role(username):
     un = username.lower()
     users = load_users()
@@ -160,7 +184,7 @@ def handle_auth(data):
             'username': un, 'display_name': dn or un, 'pass': hash_password(pwd),
             'avatar': f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
             'bio': 'Пользователь CAT', 'friends': [], 'requests': [], 'notifications': [], 'role': get_role(un),
-            'xp': 0, 'achievements': [], 'telegram_verified': False, 'birthday': ''
+            'xp': 0, 'achievements': [], 'telegram_verified': False, 'birthday': '', 'created_at': time.time()
         }
         save_user(un, new_user)
         user_sessions[un] = request.sid
@@ -189,6 +213,9 @@ def handle_auth(data):
         user_data['last_seen'] = time.time()
         save_user(un, user_data)
         check_daily_login(un)
+        if get_role(un) in ['moderator', 'admin', 'owner']:
+            award_achievement(un, 'dictator')
+        check_pioneer(un)
         notify_friends(un, 'friend_online', {'username': un, 'online': True})
         emit('auth_result', {'success': True, 'user': user_data})
 
@@ -280,9 +307,13 @@ def handle_accept(data):
     award_achievement(my_un, 'first_friend')
     if len(user.get('friends', [])) >= 5:
         award_achievement(my_un, 'soul_company')
+    if len(user.get('friends', [])) >= 15:
+        award_achievement(my_un, 'friend_specialist')
     award_achievement(target_un, 'first_friend')
     if target_un in users and len(users[target_un].get('friends', [])) >= 5:
         award_achievement(target_un, 'soul_company')
+    if target_un in users and len(users[target_un].get('friends', [])) >= 15:
+        award_achievement(target_un, 'friend_specialist')
     emit('auth_result', {'success': True, 'user': user})
     notify_user(target_un, 'friend_accepted_notify', {'user': users.get(target_un), 'by': my_un})
 
@@ -413,6 +444,37 @@ def handle_msg(data):
     award_achievement(username, 'first_msg')
     if room == 'Общий':
         award_achievement(username, 'talkative')
+
+    if username:
+        user_consec = consecutive_msgs.setdefault(username, {'room': room, 'count': 0})
+        if user_consec['room'] == room:
+            user_consec['count'] += 1
+        else:
+            user_consec['room'] = room
+            user_consec['count'] = 1
+        if user_consec['count'] >= 10:
+            award_achievement(username, 'first_spark')
+
+        current_hour = int(time.strftime('%H', time.localtime(time.time())))
+        if current_hour >= 0 and current_hour < 5:
+            award_achievement(username, 'night_chatter')
+
+        users = load_users()
+        if username in users:
+            today = time.strftime('%Y-%m-%d')
+            u_data = users[username]
+            if u_data.get('daily_date') != today:
+                u_data['daily_msgs'] = 0
+                u_data['daily_photos'] = 0
+                u_data['daily_date'] = today
+            u_data['daily_msgs'] = u_data.get('daily_msgs', 0) + 1
+            if image:
+                u_data['daily_photos'] = u_data.get('daily_photos', 0) + 1
+            save_user(username, u_data)
+            if u_data['daily_photos'] >= 10:
+                award_achievement(username, 'media_master')
+            if u_data['daily_msgs'] >= 100:
+                award_achievement(username, 'sprinter')
 
     preview_text = text[:30] if text else ('[Изображение]' if image else '')
 
@@ -666,6 +728,9 @@ def admin_set_role(username, role):
     if un in users:
         users[un]['role'] = role
         save_db('users', users)
+        if role in ['moderator', 'admin', 'owner']:
+            award_achievement(un, 'dictator')
+        notify_user(un, 'role_changed', {'role': role})
     return {'message': f'Роль @{un} изменена на {role}'}
 
 @app.route('/admin/deletemsg/<timestamp>', methods=['POST'])
@@ -698,6 +763,13 @@ ACHIEVEMENTS = {
     'weekly_marathon': {'icon': '🔥', 'name': 'Недельный марафон', 'desc': 'Заходить 7 дней подряд', 'xp': 100},
     'bio': {'icon': '✏️', 'name': 'Биограф', 'desc': 'Заполнить описание профиля', 'xp': 25},
     'avatar': {'icon': '🖼️', 'name': 'Аватар', 'desc': 'Загрузить собственное фото', 'xp': 25},
+    'first_spark': {'icon': '✨', 'name': 'Первый огонёк', 'desc': 'Отправить 10 сообщений подряд в одном чате', 'xp': 10},
+    'night_chatter': {'icon': '🌙', 'name': 'Ночной чатер', 'desc': 'Написать сообщение с 00:00 до 5:00', 'xp': 25},
+    'friend_specialist': {'icon': '🤝', 'name': 'Специалист по связям', 'desc': 'Добавить 15 друзей', 'xp': 30},
+    'media_master': {'icon': '📸', 'name': 'Медиа-мастер', 'desc': 'Отправить 10 фото за 1 день', 'xp': 10},
+    'sprinter': {'icon': '🏃', 'name': 'Спринтер', 'desc': 'Написать 100 сообщений за 24 часа', 'xp': 20},
+    'dictator': {'icon': '👑', 'name': 'Диктатор', 'desc': 'Стать модератором', 'xp': 150},
+    'pioneer': {'icon': '🏆', 'name': 'Первопроходец', 'desc': 'Стать одним из первых 50 пользователей', 'xp': 300},
 }
 
 def award_achievement(username, ach_id):
