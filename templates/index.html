@@ -695,12 +695,13 @@
             <div id="roomList"></div>
             <div class="section-label">👥 Друзья</div>
             <div id="friendList"></div>
+            <div class="section-label">💬 Личные сообщения</div>
+            <div id="dmList"></div>
             <div class="section-label">👥 Группы</div>
             <div class="chat-item" onclick="showCreateGroup()" title="Создать группу" style="cursor:pointer;">
                 <div class="chat-avatar" style="background:var(--primary);color:white;">+</div>
                 <span style="color:var(--primary);font-weight:600;">Создать группу</span>
             </div>
-            <div id="groupList"></div>
             <div id="groupList"></div>
         </div>
         <div class="profile-mini" onclick="openModal('profileOverlay'); loadProfile();">
@@ -754,6 +755,8 @@ let replyTo = null;
 let unreadCounts = {};
 let groupsData = {};
 let currentGroupId = null;
+let dmActivity = {};
+let groupActivity = {};
 
 const ESC_MAP = {
     '&': '&amp;',
@@ -842,6 +845,18 @@ function handleFileSelect(event) {
             showToast('Выберите чат', 'error');
             return;
         }
+        const ts = Date.now() / 1000;
+        if (currentRoom.startsWith('dm_')) {
+            const parts = currentRoom.split('_');
+            if (parts.length >= 3) {
+                const other = parts[1] === myData.username ? parts[2] : parts[1];
+                dmActivity[currentRoom] = { username: other, display_name: myData.display_name, last_time: ts };
+                updateDMList();
+            }
+        } else if (currentRoom.startsWith('group_')) {
+            groupActivity[currentRoom] = ts;
+            if (groupsData[currentRoom]) updateGroupList();
+        }
         socket.emit('message', {
             room: currentRoom,
             text: '',
@@ -923,6 +938,7 @@ socket.on('auth_result', function(data) {
         updateMyInfo();
         updateBadge();
         updateFriendList();
+        updateDMList();
         if (isLogin) updateRoomList();
         socket.emit('get_groups', { username: myData.username });
     } else {
@@ -1148,11 +1164,41 @@ function updateRoomList() {
     });
 }
 
+// ========== ЛС (недавние) ==========
+function updateDMList() {
+    const list = document.getElementById('dmList');
+    list.innerHTML = '';
+    const entries = Object.entries(dmActivity).sort(function(a, b) { return b[1].last_time - a[1].last_time; });
+    if (entries.length === 0) {
+        list.innerHTML = '<div style="padding:8px 12px;color:var(--text-secondary);font-size:0.8rem;">Нет диалогов</div>';
+        return;
+    }
+    entries.forEach(function([room, data]) {
+        const div = document.createElement('div');
+        div.className = 'chat-item';
+        div.setAttribute('data-room', room);
+        div.onclick = function() {
+            const parts = room.split('_');
+            if (parts.length >= 3) {
+                const friend = parts[1] === myData.username ? parts[2] : parts[1];
+                startDM(friend);
+            }
+        };
+        div.innerHTML = '<div class="chat-avatar">💬</div><span>' + escapeHtml(data.display_name) + '</span>' +
+            '<span class="unread-badge" id="unread_' + room + '"></span>';
+        list.appendChild(div);
+    });
+}
+
 // ========== ГРУППЫ ==========
 function updateGroupList() {
     const list = document.getElementById('groupList');
     list.innerHTML = '';
-    const entries = Object.entries(groupsData);
+    const entries = Object.entries(groupsData).sort(function(a, b) {
+        const ta = groupActivity[a[0]] || 0;
+        const tb = groupActivity[b[0]] || 0;
+        return tb - ta;
+    });
     if (entries.length === 0) {
         list.innerHTML = '<div style="padding:8px 12px;color:var(--text-secondary);font-size:0.8rem;">Нет групп</div>';
         return;
@@ -1412,7 +1458,12 @@ function goBack() {
 function startDM(u) {
     dmUser = u;
     const sorted = [myData.username, u].sort();
-    switchRoom('dm_' + sorted[0] + '_' + sorted[1]);
+    const room = 'dm_' + sorted[0] + '_' + sorted[1];
+    const friendData = (myData.friends || []).find(function(f) { return typeof f === 'object' ? f.username === u : f === u; });
+    const friendName = typeof friendData === 'object' ? (friendData.display_name || u) : u;
+    dmActivity[room] = { username: u, display_name: friendName, last_time: Date.now() / 1000 };
+    updateDMList();
+    switchRoom(room);
 }
 
 function replyToMessage(msgId, author, preview) {
@@ -1448,6 +1499,18 @@ function sendMsg() {
         cancelReply();
     }
 
+    const ts = Date.now() / 1000;
+    if (currentRoom.startsWith('dm_')) {
+        const parts = currentRoom.split('_');
+        if (parts.length >= 3) {
+            const other = parts[1] === myData.username ? parts[2] : parts[1];
+            dmActivity[currentRoom] = { username: other, display_name: myData.display_name, last_time: ts };
+            updateDMList();
+        }
+    } else if (currentRoom.startsWith('group_')) {
+        groupActivity[currentRoom] = ts;
+        if (groupsData[currentRoom]) updateGroupList();
+    }
     socket.emit('message', msgData);
     i.value = '';
 }
@@ -1617,6 +1680,18 @@ function normalizeRoom(room) {
 socket.on('message', function(m) {
     const mr = normalizeRoom(m.room || '');
     const myR = normalizeRoom(currentRoom || '');
+    const ts = m.timestamp || Date.now() / 1000;
+    if (mr.startsWith('dm_') && m.username && m.username !== myData.username) {
+        const parts = mr.split('_');
+        if (parts.length >= 3) {
+            const other = parts[1] === myData.username ? parts[2] : parts[1];
+            dmActivity[mr] = { username: other, display_name: m.user || other, last_time: ts };
+            updateDMList();
+        }
+    } else if (mr.startsWith('group_') && m.username !== myData.username) {
+        groupActivity[mr] = ts;
+        if (groupsData[mr]) updateGroupList();
+    }
     if (mr === myR) {
         renderMessage(m);
     } else if (mr && m.username !== (myData ? myData.username : '')) {
@@ -1671,12 +1746,17 @@ function showBrowserNotification(title, body, room) {
 
 socket.on('new_dm', function(data) {
     const isDMOpen = currentRoom && currentRoom.startsWith('dm_') && dmUser === data.from;
+    const room = data.room || '';
+    if (room && data.from) {
+        dmActivity[room] = { username: data.from, display_name: data.from, last_time: Date.now() / 1000 };
+        updateDMList();
+    }
     if (!isDMOpen) {
         const notif = { type: 'new_message', from: data.from, text: data.text, timestamp: Date.now() / 1000, read: false };
         notifications.unshift(notif);
         updateBadge();
         showToast('💬 ' + data.from + ': ' + data.text, 'info');
-        if (!document.hasFocus()) { showBrowserNotification('💬 ' + data.from, data.text, data.room || ''); }
+        if (!document.hasFocus()) { showBrowserNotification('💬 ' + data.from, data.text, room || ''); }
     }
 });
 
@@ -1688,6 +1768,7 @@ socket.on('groups_list', function(groups) {
 
 socket.on('group_created', function(group) {
     groupsData[group.id] = group;
+    groupActivity[group.id] = Date.now() / 1000;
     updateGroupList();
     switchRoom(group.id);
     showToast('Группа «' + group.name + '» создана', 'success');
