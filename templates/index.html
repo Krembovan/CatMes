@@ -26,6 +26,13 @@
         .icon-btn:hover { background: var(--primary); border-color: var(--primary); }
         .badge-count { position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; font-size: 0.6rem; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; display: none; }
         .badge-count.show { display: flex; }
+        .folder-tabs { display: flex; gap: 4px; padding: 8px 12px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .folder-tabs::-webkit-scrollbar { display: none; }
+        .folder-tab { padding: 5px 12px; border-radius: 10px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); transition: 0.2s; }
+        .folder-tab:hover { color: var(--text); border-color: var(--primary); }
+        .folder-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .folder-tab-add { padding: 5px 8px; border-radius: 10px; font-size: 0.9rem; cursor: pointer; color: var(--text-secondary); background: transparent; border: 1px dashed var(--border); transition: 0.2s; flex-shrink: 0; }
+        .folder-tab-add:hover { color: var(--primary); border-color: var(--primary); }
         .sidebar-nav { flex: 1; overflow-y: auto; padding: 15px; }
         .section-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--text-secondary); padding: 15px 12px 8px; }
         .chat-item, .friend-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; cursor: pointer; transition: 0.2s; color: var(--text-secondary); font-size: 0.9rem; }
@@ -690,6 +697,7 @@
                 <div class="icon-btn" onclick="openModal('profileOverlay'); loadProfile();">👤</div>
             </div>
         </div>
+        <div class="folder-tabs" id="folderTabs"></div>
         <div class="sidebar-nav">
             <div class="section-label">💬 Каналы</div>
             <div id="roomList"></div>
@@ -755,6 +763,8 @@ let groupsData = {};
 let currentGroupId = null;
 let dmActivity = {};
 let groupActivity = {};
+let folders = {};
+let activeFolder = 'all';
 
 const ESC_MAP = {
     '&': '&amp;',
@@ -937,6 +947,8 @@ socket.on('auth_result', function(data) {
         updateBadge();
         updateFriendList();
         if (isLogin) updateRoomList();
+        loadFolders();
+        updateFolderTabs();
         socket.emit('get_groups', { username: myData.username });
     } else {
         if (document.getElementById('registerForm').style.display === 'block') {
@@ -1004,9 +1016,13 @@ function updateFriendList() {
         return bTime - aTime;
     });
 
+    var hasFolderFilter = activeFolder !== 'all';
     sortedFriends.forEach(function(u) {
+        var fRoom = getDmKey(u);
+        if (hasFolderFilter && !isInFolder(fRoom)) return;
         const item = document.createElement('div');
         item.className = 'friend-item';
+        item.setAttribute('data-room', fRoom);
 
         const avatarWrap = document.createElement('div');
         avatarWrap.style.cssText = 'position:relative;width:38px;height:38px;flex-shrink:0;';
@@ -1155,14 +1171,156 @@ socket.on('friend_avatar', function(d) {
     });
 });
 
+// ========== ПАПКИ ==========
+function loadFolders() {
+    try {
+        const d = localStorage.getItem('cat_folders_' + (myData ? myData.username : ''));
+        folders = d ? JSON.parse(d) : {};
+    } catch(e) { folders = {}; }
+}
+
+function saveFolders() {
+    try {
+        localStorage.setItem('cat_folders_' + myData.username, JSON.stringify(folders));
+    } catch(e) {}
+}
+
+function updateFolderTabs() {
+    const tabs = document.getElementById('folderTabs');
+    if (!tabs) return;
+    let html = '<div class="folder-tab' + (activeFolder === 'all' ? ' active' : '') + '" onclick="switchFolder(\'all\')">📋 Все</div>';
+    Object.keys(folders).forEach(function(fid) {
+        html += '<div class="folder-tab' + (activeFolder === fid ? ' active' : '') + '" onclick="switchFolder(\'' + fid + '\')">' + escapeHtml(folders[fid].name) + '</div>';
+    });
+    html += '<div class="folder-tab-add" onclick="showFolderManager()" title="Управлять папками">+</div>';
+    tabs.innerHTML = html;
+}
+
+function switchFolder(fid) {
+    activeFolder = fid;
+    updateFolderTabs();
+    updateRoomList();
+    updateFriendList();
+    updateGroupList();
+}
+
+function isInFolder(roomKey) {
+    if (activeFolder === 'all') return true;
+    const folder = folders[activeFolder];
+    if (!folder) return false;
+    return folder.chats && folder.chats.indexOf(roomKey) !== -1;
+}
+
+function showFolderManager() {
+    let html = '<h3 style="text-align:center;margin:0 0 15px;">📂 Папки</h3>';
+    html += '<div style="max-height:300px;overflow-y:auto;">';
+    Object.keys(folders).forEach(function(fid) {
+        const f = folders[fid];
+        html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;margin:2px 0;">' +
+            '<span style="flex:1;font-weight:500;">' + escapeHtml(f.name) + '</span>' +
+            '<button class="badge-accept" onclick="addChatsToFolder(\'' + fid + '\')" style="font-size:0.7rem;padding:3px 8px;">+</button>' +
+            '<button class="friend-remove-btn" onclick="deleteFolder(\'' + fid + '\')" title="Удалить">✕</button></div>';
+    });
+    html += '</div>';
+    html += '<button class="btn btn-primary" onclick="createFolder()" style="margin-top:10px;width:100%;">➕ Создать папку</button>';
+    html += '<button class="btn" onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:8px;width:100%;">Закрыть</button>';
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.style.position = 'fixed';
+    modal.innerHTML = '<div class="modal" style="max-width:350px;padding:20px;">' + html + '</div>';
+    document.body.appendChild(modal);
+}
+
+function createFolder() {
+    const name = prompt('Название папки (макс 20 символов):');
+    if (!name || !name.trim()) return;
+    if (name.length > 20) { showToast('Максимум 20 символов', 'error'); return; }
+    const fid = 'folder_' + Date.now();
+    folders[fid] = { id: fid, name: name.trim(), chats: [] };
+    saveFolders();
+    updateFolderTabs();
+    document.querySelector('.modal-overlay.active')?.remove();
+    showFolderManager();
+}
+
+function deleteFolder(fid) {
+    if (!confirm('Удалить папку "' + folders[fid].name + '"? Чаты останутся.')) return;
+    delete folders[fid];
+    saveFolders();
+    if (activeFolder === fid) { activeFolder = 'all'; }
+    updateFolderTabs();
+    updateRoomList();
+    updateFriendList();
+    updateGroupList();
+    document.querySelector('.modal-overlay.active')?.remove();
+    showFolderManager();
+}
+
+function addChatsToFolder(fid) {
+    const folder = folders[fid];
+    if (!folder) return;
+    const allChats = [];
+    allChats.push({ key: 'Общий', name: 'Общий канал', icon: '🌍' });
+    allChats.push({ key: 'Новости', name: 'Новости', icon: '📢' });
+    Object.keys(groupsData).forEach(function(gid) {
+        allChats.push({ key: gid, name: groupsData[gid].name, icon: '👥' });
+    });
+    Object.keys(dmActivity).forEach(function(room) {
+        allChats.push({ key: room, name: dmActivity[room].display_name, icon: '💬' });
+    });
+    let html = '<h3 style="text-align:center;margin:0 0 15px;">Добавить чаты в «' + escapeHtml(folder.name) + '»</h3><div style="max-height:300px;overflow-y:auto;">';
+    allChats.forEach(function(chat) {
+        const checked = folder.chats.indexOf(chat.key) !== -1 ? 'checked' : '';
+        html += '<div style="padding:8px 10px;border-radius:8px;margin:2px 0;display:flex;align-items:center;gap:10px;">' +
+            '<input type="checkbox" ' + checked + ' onchange="toggleChatInFolder(\'' + fid + '\',\'' + chat.key + '\',this.checked)" style="width:18px;height:18px;">' +
+            '<span>' + chat.icon + ' ' + escapeHtml(chat.name) + '</span></div>';
+    });
+    html += '</div>';
+    html += '<button class="btn btn-primary" onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:10px;width:100%;">Готово</button>';
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.style.position = 'fixed';
+    modal.innerHTML = '<div class="modal" style="max-width:350px;padding:20px;">' + html + '</div>';
+    document.body.appendChild(modal);
+}
+
+function toggleChatInFolder(fid, chatKey, add) {
+    const folder = folders[fid];
+    if (!folder) return;
+    if (add) {
+        if (folder.chats.indexOf(chatKey) === -1) folder.chats.push(chatKey);
+    } else {
+        folder.chats = folder.chats.filter(function(c) { return c !== chatKey; });
+    }
+    saveFolders();
+    if (activeFolder === fid) {
+        updateRoomList();
+        updateFriendList();
+        updateGroupList();
+    }
+}
+
+function addCurrentRoomToFolder(e) {
+    if (!currentRoom || activeFolder === 'all') return;
+    const folder = folders[activeFolder];
+    if (!folder || !currentRoom) return;
+    const idx = folder.chats.indexOf(currentRoom);
+    if (idx === -1) {
+        folder.chats.push(currentRoom);
+        saveFolders();
+        showToast('Чат добавлен в папку', 'success');
+    }
+}
+
 // ========== КОМНАТЫ ==========
 function updateRoomList() {
     const list = document.getElementById('roomList');
     list.innerHTML = '';
-    const rooms = [
+    const allRooms = [
         { key: 'Общий', name: 'Общий канал', icon: '🌍' },
         { key: 'Новости', name: 'Новости', icon: '📢' }
     ];
+    const rooms = allRooms.filter(function(r) { return isInFolder(r.key); });
     rooms.forEach(function(r) {
         const div = document.createElement('div');
         div.className = 'chat-item';
@@ -1187,7 +1345,9 @@ function updateGroupList() {
         list.innerHTML = '<div style="padding:8px 12px;color:var(--text-secondary);font-size:0.8rem;">Нет групп</div>';
         return;
     }
+    var hasFolderFilter = activeFolder !== 'all';
     entries.forEach(function([gid, g]) {
+        if (hasFolderFilter && !isInFolder(gid)) return;
         const div = document.createElement('div');
         div.className = 'chat-item';
         div.setAttribute('data-room', gid);
