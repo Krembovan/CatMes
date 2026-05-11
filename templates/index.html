@@ -127,7 +127,6 @@
             width: 480px;
             max-width: 95vw;
             border-radius: 24px;
-            overflow: hidden;
             background: #161b22;
             color: #e2e8f0;
             display: flex;
@@ -138,7 +137,10 @@
             overflow-y: auto;
             flex: 1;
             padding: 0 25px 25px;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         }
+        .profile-body-scroll::-webkit-scrollbar { display: none; }
         .profile-header {
             height: 80px;
             background: linear-gradient(135deg, #7c5cfc, #9b7cfc);
@@ -421,9 +423,6 @@
             <div class="tabs">
                 <div class="tab active" data-tab="info">О себе</div>
                 <div class="tab" data-tab="achievements">Достижения</div>
-            </div>
-            <div style="text-align:center;margin-top:10px;">
-                <button class="btn btn-danger" onclick="logout()" style="width:auto;padding:8px 24px;display:inline-block;">🚪 Выйти</button>
             </div>
 
             <div id="tab-content">
@@ -788,7 +787,7 @@ function updateFriendList() {
         img.alt = '';
         img.addEventListener('click', function(e) {
             e.stopPropagation();
-            viewProfile(u);
+            loadProfile(u);
         });
         img.addEventListener('error', function() {
             this.style.display = 'none';
@@ -1115,7 +1114,7 @@ function renderMessage(m) {
     avImg.alt = '';
     avImg.style.cursor = 'pointer';
     avImg.title = 'Посмотреть профиль';
-    avImg.addEventListener('click', function() { viewProfile(m.username); });
+    avImg.addEventListener('click', function() { loadProfile(m.username); });
     avImg.addEventListener('error', function() { this.src = fallbackAvUrl; });
     msgDiv.appendChild(avImg);
 
@@ -1128,7 +1127,7 @@ function renderMessage(m) {
         author.style.cursor = 'pointer';
         author.title = 'Посмотреть профиль';
         author.textContent = m.user || m.username;
-        author.addEventListener('click', function() { viewProfile(m.username); });
+        author.addEventListener('click', function() { loadProfile(m.username); });
         bubble.appendChild(author);
     }
 
@@ -1550,6 +1549,12 @@ function getLevelXp(level) {
 }
 function getLevelTitle(level) {
     return ['', 'Новорождённый котёнок', 'Любопытный котёнок', 'Игривый кот', 'Кот-путешественник', 'Охотник', 'Мудрый кот'][level] || 'Легенда';
+}
+
+function logout() {
+    sessionStorage.removeItem('cat_pass');
+    localStorage.removeItem('cat_user');
+    location.reload();
 }
 
 document.querySelectorAll('.tab').forEach(tab => {
