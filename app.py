@@ -100,6 +100,7 @@ def uploaded_file(filename):
     return send_from_directory(UPLOADS_DIR, filename)
 
 RATE_LIMIT = 0.5
+MAX_XP = 99999
 
 def check_rate_limit(username):
     now = time.time()
@@ -135,9 +136,14 @@ def migrate_created_at():
             changed = True
         u.setdefault('achievements', [])
         u.setdefault('xp', 0)
+        if u['xp'] > MAX_XP:
+            u['xp'] = MAX_XP
+            changed = True
         if not any(a['id'] == 'pioneer' for a in u['achievements']):
             u['achievements'].append({'id': 'pioneer', 'earned': time.time()})
             u['xp'] += 300
+            if u['xp'] > MAX_XP:
+                u['xp'] = MAX_XP
             changed = True
     if changed:
         save_db('users', users)
@@ -748,7 +754,7 @@ def admin_add_xp(username, amount):
     users = load_users()
     if un in users:
         users[un].setdefault('xp', 0)
-        users[un]['xp'] += xp_amount
+        users[un]['xp'] = min(users[un]['xp'] + xp_amount, MAX_XP)
         save_db('users', users)
         notify_user(un, 'xp_awarded', {'amount': xp_amount, 'total': users[un]['xp']})
         return {'message': f'@{un} получил {xp_amount} XP (всего: {users[un]["xp"]})'}
@@ -849,7 +855,7 @@ def award_achievement(username, ach_id):
     if not ach:
         return
     user['achievements'].append({'id': ach_id, 'earned': time.time()})
-    user['xp'] += ach['xp']
+    user['xp'] = min(user['xp'] + ach['xp'], MAX_XP)
     save_user(username, user)
     notify_user(username, 'achievement_unlocked', {'id': ach_id, 'name': ach['name'], 'xp': ach['xp']})
 

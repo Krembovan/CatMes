@@ -132,6 +132,28 @@
             display: flex;
             flex-direction: column;
             max-height: 90vh;
+            transition: box-shadow 0.3s, border-color 0.3s;
+        }
+        .legendary-profile .profile-modal {
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.15), 0 0 60px rgba(255, 215, 0, 0.05), inset 0 0 30px rgba(255, 215, 0, 0.03);
+            animation: legendaryGlow 3s ease-in-out infinite alternate;
+        }
+        @keyframes legendaryGlow {
+            0% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.1), 0 0 40px rgba(255, 215, 0, 0.03), inset 0 0 20px rgba(255, 215, 0, 0.02); }
+            100% { box-shadow: 0 0 40px rgba(255, 215, 0, 0.25), 0 0 80px rgba(255, 215, 0, 0.08), inset 0 0 40px rgba(255, 215, 0, 0.05); }
+        }
+        .legendary-profile .profile-header {
+            background: linear-gradient(135deg, #b8860b, #ffd700, #f59e0b);
+            background-size: 200% 200%;
+            animation: legendaryHeader 4s ease-in-out infinite alternate;
+        }
+        @keyframes legendaryHeader {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 100% 50%; }
+        }
+        .legendary-profile .profile-avatar-img {
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
         }
         .profile-body-scroll {
             overflow-y: auto;
@@ -1636,8 +1658,10 @@ function updateProfileUI(user, isOwner) {
 }
 
 function updateXpUI(xp, legendary) {
+    const overlay = document.getElementById('profileOverlay');
     const block = document.getElementById('xpBlock');
     if (legendary) {
+        overlay.classList.add('legendary-profile');
         block.classList.add('legendary-level');
         document.getElementById('profileLevel').textContent = '∞';
         document.getElementById('profileLevelTitle').textContent = 'Легендарный уровень';
@@ -1645,6 +1669,7 @@ function updateXpUI(xp, legendary) {
         document.getElementById('profileXpText').textContent = '∞ XP';
         return;
     }
+    overlay.classList.remove('legendary-profile');
     block.classList.remove('legendary-level');
     const level = getLevel(xp);
     const nextXp = getNextLevelXp(level);
