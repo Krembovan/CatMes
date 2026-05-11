@@ -437,30 +437,17 @@
                 </div>
                 <div id="tab-achievements" style="display: none;">
                     <div id="achievementsContent" class="achievements-list"></div>
-                    <div id="achievementsVerificationPlate" class="verification-plate" style="display: none;">
-                        <div class="icon">📱</div>
-                        <div class="title">Подтверждение через Telegram</div>
-                        <div class="desc">Достижения работают после привязки Telegram.<br>Введи свой @username и нажми «Отправить код». Мы пришлём код в чат.</div>
-                        <div class="input-group">
-                            <label>Ваш Telegram</label>
-                            <input type="text" id="telegramInput" placeholder="@username">
-                        </div>
-                        <button class="btn btn-primary" onclick="requestTelegramCode()" id="tgSendBtn">📨 Отправить код</button>
-                        <div id="telegramCodeDisplay" style="display:none; font-size:2rem; font-weight:900; color:#7c5cfc; margin:15px 0; text-align:center;"></div>
-                        <div id="tgInstructions" style="display:none; font-size:0.85rem; color:#94a3b8; margin-bottom:15px;">Отправь этот код боту @CatVerifyBot в Telegram</div>
-                        <div class="input-group" style="margin-top: 10px;">
-                            <label>Код из Telegram</label>
-                            <input type="text" id="telegramCodeInput" placeholder="123456">
-                        </div>
-                        <button class="btn btn-primary" onclick="verifyTelegramCode()" id="tgVerifyBtn">✅ Подтвердить код</button>
-                        <div id="tgStatus" style="font-size:0.8rem; margin-top:5px;"></div>
-                        <div class="input-group" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
-                            <label>🔑 Или введи инвайт-код</label>
-                            <input type="text" id="inviteCodeInput" placeholder="XXXX-XXXX" style="text-transform:uppercase;text-align:center;font-weight:700;letter-spacing:3px;">
-                        </div>
-                        <button class="btn btn-primary" onclick="verifyInviteCode()" id="inviteVerifyBtn">🔑 Применить код</button>
-                        <div id="inviteStatus" style="font-size:0.8rem; margin-top:5px;"></div>
-                    </div>
+                     <div id="achievementsVerificationPlate" class="verification-plate" style="display: none;">
+                         <div class="icon">🔑</div>
+                         <div class="title">Верификация через инвайт-код</div>
+                         <div class="desc">Введи инвайт-код, полученный от администратора.</div>
+                         <div class="input-group">
+                             <label>🔑 Инвайт-код</label>
+                             <input type="text" id="inviteCodeInput" placeholder="XXXXXXXX" style="text-transform:uppercase;text-align:center;font-weight:700;letter-spacing:3px;">
+                         </div>
+                         <button class="btn btn-primary" onclick="verifyInviteCode()" id="inviteVerifyBtn">🔑 Применить код</button>
+                         <div id="inviteStatus" style="font-size:0.8rem; margin-top:5px;"></div>
+                     </div>
                 </div>
             </div>
         </div>
@@ -1584,78 +1571,6 @@ function enableNotifications() {
     });
 }
 // ========== ВЕРИФИКАЦИЯ ЧЕРЕЗ TELEGRAM ==========
-function requestTelegramCode() {
-    const tg = document.getElementById('telegramInput').value.trim();
-    if (!tg) {
-        showToast('Введите Telegram-username', 'error');
-        return;
-    }
-    const btn = document.getElementById('tgSendBtn');
-    btn.disabled = true;
-    btn.textContent = '⏳ Генерация...';
-    fetch('/api/verify/telegram', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: myData.username, telegram: tg })
-    })
-    .then(r => r.json())
-    .then(d => {
-        btn.disabled = false;
-        btn.textContent = '📨 Получить код';
-        if (d.ok) {
-            if (d.sent) {
-                showToast(d.message || 'Код отправлен в Telegram!', 'success');
-            } else {
-                document.getElementById('telegramCodeDisplay').textContent = d.code;
-                document.getElementById('telegramCodeDisplay').style.display = 'block';
-                document.getElementById('tgInstructions').style.display = 'block';
-                showToast(d.message || 'Напиши боту @CatVerifyBot /start', 'info');
-            }
-        } else {
-            showToast(d.error || 'Ошибка', 'error');
-        }
-    })
-    .catch(e => {
-        btn.disabled = false;
-        btn.textContent = '📨 Получить код';
-        showToast('Ошибка сети', 'error');
-    });
-}
-
-function verifyTelegramCode() {
-    const code = document.getElementById('telegramCodeInput').value.trim();
-    if (!code) {
-        showToast('Введите код из Telegram', 'error');
-        return;
-    }
-    const btn = document.getElementById('tgVerifyBtn');
-    btn.disabled = true;
-    btn.textContent = '⏳ Проверка...';
-    fetch('/api/verify/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: myData.username, code: code })
-    })
-    .then(r => r.json())
-    .then(d => {
-        btn.disabled = false;
-        btn.textContent = '✅ Подтвердить код';
-        if (d.ok) {
-            showToast('Верификация пройдена! Уровни и достижения открыты.', 'success');
-            myData.telegram_verified = true;
-            // Перезагрузим профиль
-            loadProfile();
-        } else {
-            showToast(d.error || 'Неверный код', 'error');
-        }
-    })
-    .catch(e => {
-        btn.disabled = false;
-        btn.textContent = '✅ Подтвердить код';
-        showToast('Ошибка сети', 'error');
-    });
-}
-
 function verifyInviteCode() {
     const code = document.getElementById('inviteCodeInput').value.trim().toUpperCase();
     if (!code) {
