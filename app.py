@@ -333,7 +333,9 @@ def handle_delete_message(data):
             break
 
     can_delete = False
-    if role in ['owner', 'admin', 'moderator']:
+    if role in ['owner', 'admin']:
+        can_delete = True
+    elif role == 'moderator' and target_msg and target_msg.get('room') == 'Общий':
         can_delete = True
     elif target_msg and target_msg.get('username', '').lower() == username:
         if target_msg.get('room', '').startswith('dm_'):
@@ -553,7 +555,10 @@ def admin_panel():
             'friends': len(d.get('friends',[])),
             'requests': len(d.get('requests',[]))
         })
-    can = get_role(un) in ['owner','admin']
+    is_owner = get_role(un) == 'owner'
+    can_manage_roles = get_role(un) in ['owner', 'admin']
+    can_manage_invites = get_role(un) in ['owner', 'admin']
+    can_delete_user = get_role(un) == 'owner'
     html = '''<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>CAT Admin</title><style>
     body{background:#0d1117;color:#e2e8f0;font-family:sans-serif;padding:30px}
     h1{background:linear-gradient(135deg,#7c5cfc,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
@@ -582,17 +587,26 @@ def admin_panel():
     <div class="stats"><div class="stat-card"><div class="stat-value">''' + str(len(users_list)) + '''</div><div class="stat-label">Пользователей</div></div>
     <div class="stat-card"><div class="stat-value">''' + str(len(msgs)) + '''</div><div class="stat-label">Сообщений</div></div></div>
     <div class="section"><h2>👥 Пользователи</h2><table><tr><th>Username</th><th>Имя</th><th>Роль</th><th>Друзья</th><th>Запросы</th>'''
-    if can: 
+    if can_manage_roles: 
         html += '<th>Действия</th>'
     html += '</tr>'
     for u in users_list:
         bc = 'badge-' + ('owner' if u['role']=='owner' else 'admin' if u['role']=='admin' else 'mod' if u['role']=='moderator' else 'user')
         rn = {'owner':'Владелец','admin':'Админ','moderator':'Модер','user':'Пользователь'}.get(u['role'],u['role'])
         html += f'<tr><td>@{html_escape(u["username"])}</td><td>{html_escape(u["display_name"])}</td><td><span class="badge {bc}">{html_escape(rn)}</span></td><td>{u["friends"]}</td><td>{u["requests"]}</td>'
-        if can and u['role'] != 'owner':
-            html += f'<td><select onchange="setRole(\'{html_escape(u["username"])}\',this.value)"><option value="user" {"selected" if u["role"]=="user" else ""}>Пользователь</option><option value="moderator" {"selected" if u["role"]=="moderator" else ""}>Модератор</option><option value="admin" {"selected" if u["role"]=="admin" else ""}>Админ</option></select> <button class="btn btn-danger" onclick="deleteUser(\'{html_escape(u["username"])}\')">Удалить</button></td>'
-        elif u['role'] == 'owner':
+        if u['role'] == 'owner':
             html += '<td><span style="color:#f59e0b;">Владелец</span></td>'
+        elif can_manage_roles:
+            html += '<td>'
+            html += f'<select onchange="setRole(\'{html_escape(u["username"])}\',this.value)">'
+            html += f'<option value="user" {"selected" if u["role"]=="user" else ""}>Пользователь</option>'
+            html += f'<option value="moderator" {"selected" if u["role"]=="moderator" else ""}>Модератор</option>'
+            if is_owner:
+                html += f'<option value="admin" {"selected" if u["role"]=="admin" else ""}>Админ</option>'
+            html += '</select>'
+            if can_delete_user:
+                html += f' <button class="btn btn-danger" onclick="deleteUser(\'{html_escape(u["username"])}\')">Удалить</button>'
+            html += '</td>'
         html += '</tr>'
     html += '</table></div><div class="section"><h2>📝 Сообщения (модерация)</h2>'
     for m in general:
@@ -601,7 +615,7 @@ def admin_panel():
         msg_ts = str(m.get('timestamp',''))
         html += f'<div class="msg-item"><b>@{html_escape(msg_user)}</b>: {html_escape(msg_text)} <button class="btn btn-sm" onclick="deleteMsg(\'{html_escape(msg_ts)}\')" style="float:right;">✕</button></div>'
     html += '</div>'
-    if can:
+    if can_manage_invites:
         invites_data = load_invites()
         total_invites = len(invites_data)
         used_invites = sum(1 for v in invites_data.values() if v.get('used_by'))
@@ -614,7 +628,7 @@ def admin_panel():
             html += f'<tr><td style="font-family:monospace;font-weight:700;">{html_escape(c)}</td><td>@{html_escape(v.get("created_by","?"))}</td><td>{status}</td></tr>'
         html += '</table></div>'
     html += '<script>'
-    if can:
+    if can_manage_invites:
         html += 'function createInvite(){fetch("/api/invite/create",{method:"POST"}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById("newCodeDisplay").textContent="\\uD83C\\uDF89 "+d.code;document.getElementById("newCodeDisplay").style.display="block";setTimeout(()=>location.reload(),2000)}else{alert(d.error)}})}'
     html += 'function deleteUser(un){if(!confirm("\\u0423\\u0434\\u0430\\u043B\\u0438\\u0442\\u044C @"+un+"?"))return;fetch("/admin/delete/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
     html += 'function setRole(un,r){fetch("/admin/setrole/"+un+"/"+r,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
@@ -634,8 +648,14 @@ def admin_delete_user(username):
 
 @app.route('/admin/setrole/<username>/<role>', methods=['POST'])
 def admin_set_role(username, role):
-    if get_role(request.authorization.username.lower() if request.authorization else '') not in ['owner','admin']: 
-        return {'message':'Нет прав'}
+    requester_un = request.authorization.username.lower() if request.authorization else ''
+    requester_role = get_role(requester_un)
+    if requester_role not in ['owner', 'admin']:
+        return {'message': 'Нет прав'}
+    if requester_role == 'admin' and role not in ['user', 'moderator']:
+        return {'message': 'Админ может назначить только роль Модератора'}
+    if role not in ['user', 'moderator', 'admin', 'owner']:
+        return {'message': 'Некорректная роль'}
     un = username.lower()
     users = load_users()
     if un in users:
@@ -645,9 +665,19 @@ def admin_set_role(username, role):
 
 @app.route('/admin/deletemsg/<timestamp>', methods=['POST'])
 def admin_delete_msg(timestamp):
-    if get_role(request.authorization.username.lower() if request.authorization else '') not in ['owner','admin','moderator']: 
-        return {'message':'Нет прав'}
+    requester_un = request.authorization.username.lower() if request.authorization else ''
+    requester_role = get_role(requester_un)
+    if requester_role not in ['owner', 'admin', 'moderator']:
+        return {'message': 'Нет прав'}
     msgs = load_messages()
+    target_msg = None
+    for m in msgs:
+        if str(m.get('timestamp')) == str(timestamp) or str(m.get('id')) == str(timestamp):
+            target_msg = m
+            break
+    if requester_role == 'moderator':
+        if not target_msg or target_msg.get('room') != 'Общий':
+            return {'message': 'Модератор может удалять только сообщения из Общего чата'}
     msgs = [m for m in msgs if str(m.get('timestamp')) != str(timestamp) and str(m.get('id')) != str(timestamp)]
     save_db('messages', msgs)
     return {'message': 'Сообщение удалено'}
