@@ -699,16 +699,15 @@
         </div>
         <div class="folder-tabs" id="folderTabs"></div>
         <div class="sidebar-nav">
-            <div class="section-label">💬 Каналы</div>
             <div id="roomList"></div>
-            <div class="section-label">👥 Друзья</div>
-            <div id="friendList"></div>
-            <div class="section-label">👥 Группы</div>
-            <div class="chat-item" onclick="showCreateGroup()" title="Создать группу" style="cursor:pointer;">
+            <div id="sep1" style="border-top:1px solid var(--border);margin:4px 0;display:none;"></div>
+            <div id="createGroupItem" class="chat-item" onclick="showCreateGroup()" title="Создать группу" style="cursor:pointer;">
                 <div class="chat-avatar" style="background:var(--primary);color:white;">+</div>
                 <span style="color:var(--primary);font-weight:600;">Создать группу</span>
             </div>
             <div id="groupList"></div>
+            <div id="sep2" style="border-top:1px solid var(--border);margin:4px 0;display:none;"></div>
+            <div id="friendList"></div>
         </div>
         <div class="profile-mini" onclick="openModal('profileOverlay'); loadProfile();">
             <img id="myAvatar" class="avatar-mini" src="" alt="Аватар">
@@ -1092,6 +1091,7 @@ function updateFriendList() {
         empty.textContent = 'Нет друзей';
         l.appendChild(empty);
     }
+    toggleSections();
 }
 
 function openFriendModal() {
@@ -1185,10 +1185,20 @@ function saveFolders() {
     } catch(e) {}
 }
 
+const SYSTEM_FOLDERS = {
+    'all': { name: '📋 Все' },
+    'channels': { name: '💬 Каналы' },
+    'friends': { name: '👥 Друзья' },
+    'groups': { name: '👥 Группы' }
+};
+
 function updateFolderTabs() {
     const tabs = document.getElementById('folderTabs');
     if (!tabs) return;
-    let html = '<div class="folder-tab' + (activeFolder === 'all' ? ' active' : '') + '" onclick="switchFolder(\'all\')">📋 Все</div>';
+    let html = '';
+    Object.keys(SYSTEM_FOLDERS).forEach(function(fid) {
+        html += '<div class="folder-tab' + (activeFolder === fid ? ' active' : '') + '" onclick="switchFolder(\'' + fid + '\')">' + SYSTEM_FOLDERS[fid].name + '</div>';
+    });
     Object.keys(folders).forEach(function(fid) {
         html += '<div class="folder-tab' + (activeFolder === fid ? ' active' : '') + '" onclick="switchFolder(\'' + fid + '\')">' + escapeHtml(folders[fid].name) + '</div>';
     });
@@ -1206,6 +1216,15 @@ function switchFolder(fid) {
 
 function isInFolder(roomKey) {
     if (activeFolder === 'all') return true;
+    if (activeFolder === 'channels') {
+        return roomKey === 'Общий' || roomKey === 'Новости';
+    }
+    if (activeFolder === 'friends') {
+        return roomKey.startsWith('dm_');
+    }
+    if (activeFolder === 'groups') {
+        return roomKey.startsWith('group_');
+    }
     const folder = folders[activeFolder];
     if (!folder) return false;
     return folder.chats && folder.chats.indexOf(roomKey) !== -1;
@@ -1333,6 +1352,7 @@ function addChatsToFolder(fid) {
 }
 
 function toggleChatInFolder(fid, chatKey, add) {
+    if (fid in SYSTEM_FOLDERS) return;
     const folder = folders[fid];
     if (!folder) return;
     if (add) {
@@ -1349,7 +1369,7 @@ function toggleChatInFolder(fid, chatKey, add) {
 }
 
 function addCurrentRoomToFolder(e) {
-    if (!currentRoom || activeFolder === 'all') return;
+    if (!currentRoom || activeFolder === 'all' || activeFolder in SYSTEM_FOLDERS) return;
     const folder = folders[activeFolder];
     if (!folder || !currentRoom) return;
     const idx = folder.chats.indexOf(currentRoom);
@@ -1358,6 +1378,18 @@ function addCurrentRoomToFolder(e) {
         saveFolders();
         showToast('Чат добавлен в папку', 'success');
     }
+}
+
+function toggleSections() {
+    var hasChannels = document.getElementById('roomList').children.length > 0;
+    var hasGroups = document.getElementById('groupList').children.length > 0 || document.querySelector('#groupList .chat-item');
+    var hasFriends = document.getElementById('friendList').children.length > 0;
+    var createGrp = document.getElementById('createGroupItem');
+    var sep1 = document.getElementById('sep1');
+    var sep2 = document.getElementById('sep2');
+    if (hasChannels && (hasGroups || createGrp)) { sep1.style.display = 'block'; } else { sep1.style.display = 'none'; }
+    if ((hasGroups || createGrp) && hasFriends) { sep2.style.display = 'block'; } else { sep2.style.display = 'none'; }
+    if (activeFolder === 'all' || activeFolder === 'groups') { createGrp.style.display = 'flex'; } else { createGrp.style.display = 'none'; }
 }
 
 // ========== КОМНАТЫ ==========
@@ -1378,6 +1410,7 @@ function updateRoomList() {
             '<span class="unread-badge" id="unread_' + r.key + '"></span>';
         list.appendChild(div);
     });
+    toggleSections();
 }
 
 // ========== ГРУППЫ ==========
@@ -1404,6 +1437,7 @@ function updateGroupList() {
             '<span class="unread-badge" id="unread_' + gid + '"></span>';
         list.appendChild(div);
     });
+    toggleSections();
 }
 
 function showCreateGroup() {
