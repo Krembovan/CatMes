@@ -187,6 +187,7 @@ def handle_auth(data):
         user_data['online'] = True
         user_data['last_seen'] = time.time()
         save_user(un, user_data)
+        check_daily_login(un)
         notify_friends(un, 'friend_online', {'username': un, 'online': True})
         emit('auth_result', {'success': True, 'user': user_data})
 
@@ -211,6 +212,10 @@ def handle_profile_update(data):
         if av:
             users[un]['avatar'] = av
     save_user(un, users[un])
+    if users[un].get('bio', '').strip():
+        award_achievement(un, 'bio')
+    if av and users[un].get('avatar', ''):
+        award_achievement(un, 'avatar')
     emit('profile_updated', {'user': users[un]})
 
 @socketio.on('send_friend_request')
@@ -270,6 +275,9 @@ def handle_accept(data):
             save_user(target_un, users[target_un])
     user['notifications'] = [n for n in user.get('notifications', []) if not (n.get('type')=='friend_request' and n.get('from','').lower()==target_un)]
     save_user(my_un, user)
+    award_achievement(my_un, 'first_friend')
+    if len(user.get('friends', [])) >= 5:
+        award_achievement(my_un, 'soul_company')
     emit('auth_result', {'success': True, 'user': user})
     notify_user(target_un, 'friend_accepted_notify', {'user': users.get(target_un), 'by': my_un})
 
@@ -395,6 +403,9 @@ def handle_msg(data):
                 break
 
     save_message(data)
+    award_achievement(username, 'first_msg')
+    if room == 'Общий':
+        award_achievement(username, 'talkative')
 
     preview_text = text[:30] if text else ('[Изображение]' if image else '')
 
@@ -635,6 +646,53 @@ def admin_delete_msg(timestamp):
     save_db('messages', msgs)
     return {'message': 'Сообщение удалено'}
 
+
+# ========== ДОСТИЖЕНИЯ ==========
+ACHIEVEMENTS = {
+    'first_msg': {'icon': '🐱', 'name': 'Первый мяу', 'desc': 'Отправить первое сообщение в чат', 'xp': 25},
+    'first_friend': {'icon': '🤝', 'name': 'Первый друг', 'desc': 'Добавить одного друга', 'xp': 25},
+    'soul_company': {'icon': '🎉', 'name': 'Душа компании', 'desc': 'Иметь 5 друзей одновременно', 'xp': 50},
+    'talkative': {'icon': '💬', 'name': 'Общительный', 'desc': 'Написать в общий канал сегодня', 'xp': 15},
+    'daily_login': {'icon': '📅', 'name': 'Ежедневный вход', 'desc': 'Зайти в чат сегодня', 'xp': 10},
+    'weekly_marathon': {'icon': '🔥', 'name': 'Недельный марафон', 'desc': 'Заходить 7 дней подряд', 'xp': 100},
+    'bio': {'icon': '✏️', 'name': 'Биограф', 'desc': 'Заполнить описание профиля', 'xp': 25},
+    'avatar': {'icon': '🖼️', 'name': 'Аватар', 'desc': 'Загрузить собственное фото', 'xp': 25},
+}
+
+def award_achievement(username, ach_id):
+    users = load_users()
+    if username not in users:
+        return
+    user = users[username]
+    if not user.get('telegram_verified') and not user.get('verified_by'):
+        return
+    user.setdefault('achievements', [])
+    user.setdefault('xp', 0)
+    if any(a['id'] == ach_id for a in user['achievements']):
+        return
+    ach = ACHIEVEMENTS.get(ach_id)
+    if not ach:
+        return
+    user['achievements'].append({'id': ach_id, 'earned': time.time()})
+    user['xp'] += ach['xp']
+    save_user(username, user)
+    notify_user(username, 'achievement_unlocked', {'id': ach_id, 'name': ach['name'], 'xp': ach['xp']})
+
+def check_daily_login(username):
+    users = load_users()
+    if username not in users:
+        return
+    user = users[username]
+    today = time.strftime('%Y-%m-%d')
+    user.setdefault('login_dates', [])
+    if today not in user['login_dates']:
+        user['login_dates'].append(today)
+        if len(user['login_dates']) > 30:
+            user['login_dates'] = user['login_dates'][-30:]
+        save_user(username, user)
+    if len(user['login_dates']) >= 7:
+        award_achievement(username, 'weekly_marathon')
+    award_achievement(username, 'daily_login')
 
 # ========== ИНВАЙТ-КОДЫ ==========
 INVITE_FILE = os.path.join(DATA_DIR, "invite_codes.json")

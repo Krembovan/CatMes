@@ -130,6 +130,14 @@
             overflow: hidden;
             background: #161b22;
             color: #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh;
+        }
+        .profile-body-scroll {
+            overflow-y: auto;
+            flex: 1;
+            padding: 0 25px 25px;
         }
         .profile-header {
             height: 80px;
@@ -378,7 +386,7 @@
             <button class="profile-edit-btn" id="editProfileBtn" title="Редактировать профиль" style="display:none;">✏️</button>
             <button class="profile-close-btn" onclick="closeModal('profileOverlay'); isEditingProfile = false; document.getElementById('profileModal').classList.remove('edit-mode'); document.querySelector('.profile-actions').classList.remove('show');">✕</button>
         </div>
-        <div class="profile-body">
+        <div class="profile-body-scroll" id="profileBodyScroll">
             <div class="profile-avatar-container" id="profileAvatarContainer">
                 <img id="profileAvatar" class="profile-avatar-img" src="" alt="Аватар">
                 <div class="profile-avatar-overlay">📷 Загрузить</div>
@@ -413,6 +421,9 @@
             <div class="tabs">
                 <div class="tab active" data-tab="info">О себе</div>
                 <div class="tab" data-tab="achievements">Достижения</div>
+            </div>
+            <div style="text-align:center;margin-top:10px;">
+                <button class="btn btn-danger" onclick="logout()" style="width:auto;padding:8px 24px;display:inline-block;">🚪 Выйти</button>
             </div>
 
             <div id="tab-content">
@@ -450,11 +461,10 @@
                      </div>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
+        </div> <!-- profile-body-scroll -->
+    </div> <!-- profile-modal -->
+</div> <!-- profile-overlay -->
 
-<!-- Friend Request Modal -->
 <div id="friendOverlay" class="modal-overlay">
     <div class="modal">
         <h2>🔍 Найти друга</h2>

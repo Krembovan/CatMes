@@ -75,12 +75,9 @@ function startDM(u) {
 }
 
 function viewProfile(u) {
-    if (u === window.myData.username) {
-        openModal('#profileOverlay');
-        if (typeof loadProfile === 'function') loadProfile();
-        return;
+    if (typeof loadProfile === 'function') {
+        loadProfile(u);
     }
-    socket.emit('get_user_profile', { username: u, requester: window.myData.username });
 }
 
 function sendFriendReqTo(u) {
@@ -214,36 +211,7 @@ socket.on('new_dm', (data) => {
     showToast('💬 @' + data.from + ': ' + data.text, 'info');
 });
 
-// User profile modal
-socket.on('user_profile', (d) => {
-    if (d.error) { showToast(d.error, 'error'); return; }
-    const u = d.user;
-    const isF = window.myData.friends && window.myData.friends.includes(d.username);
-    const isR = window.myData.requests && window.myData.requests.includes(d.username);
-    const isBy = u.requests && u.requests.includes(window.myData.username);
-    const rn = { 'owner': '👑 Владелец', 'admin': '🛡️ Админ', 'moderator': '🛡️ Модер', 'user': '👤 Пользователь' };
-    const rc = u.role === 'owner' ? 'color:#f59e0b;' : u.role === 'admin' ? 'color:#ef4444;' : u.role === 'moderator' ? 'color:#10b981;' : 'color:#94a3b8;';
-    const ls = u.last_seen ? new Date(u.last_seen * 1000) : null;
-    const st = u.online ? '🟢 Онлайн' : (ls ? 'Был(а) ' + timeAgo(ls) : '');
-    let h = '<h2>👤 Профиль</h2>';
-    h += '<img src="' + escapeHtml(u.avatar || '') + '" class="avatar-large" alt="Аватар">';
-    h += '<div style="text-align:center;font-size:1.2rem;font-weight:700;">' + escapeHtml(u.display_name) + '</div>';
-    h += '<div style="text-align:center;color:var(--text-secondary);">@' + escapeHtml(d.username) + '</div>';
-    h += '<div style="text-align:center;font-weight:600;' + rc + '">' + (rn[u.role] || '👤 Пользователь') + '</div>';
-    h += '<div style="text-align:center;font-size:0.75rem;color:var(--text-secondary);margin-top:4px;">' + st + '</div>';
-    if (u.dnd) h += '<div style="text-align:center;color:#f59e0b;margin-top:2px;">🔕 Не беспокоить</div>';
-    h += '<div style="text-align:center;margin:10px 0;padding:8px;background:var(--surface);border-radius:8px;">' + escapeHtml(u.bio || '') + '</div>';
-    h += '<div style="display:flex;gap:20px;justify-content:center;margin:10px 0;color:var(--text-secondary);font-size:0.85rem;"><span>Друзей: ' + (u.friends ? u.friends.length : 0) + '</span></div>';
-    if (!isF && !isBy && !isR) h += '<button class="btn btn-primary" data-sendreq="' + d.username + '">📨 Добавить в друзья</button>';
-    else if (isR) h += '<button class="btn btn-primary" data-accept="' + d.username + '">✓ Принять запрос</button>';
-    else if (isBy) h += '<button class="btn btn-secondary" disabled>⏳ Запрос отправлен</button>';
-    else if (isF) h += '<button class="btn btn-primary" data-dm="' + d.username + '">💬 Написать</button>';
-    h += '<button class="btn btn-primary" data-call="' + d.username + '">📞 Позвонить</button>';
-    h += '<button class="btn btn-secondary" data-close-profile>Закрыть</button>';
-    const ucc = $('#userProfileContent');
-    if (ucc) ucc.innerHTML = h;
-    openModal('#userProfileOverlay');
-});
+
 
 // Notifications
 function renderNotifications() {
