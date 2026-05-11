@@ -275,6 +275,16 @@
         .mini-dot.online { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
         .mini-dot.offline { background: #64748b; }
         .mini-dot.idle { background: #eab308; box-shadow: 0 0 6px rgba(234,179,8,0.4); }
+        .friend-status-dot {
+            position: absolute;
+            bottom: 1px;
+            right: 1px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid #1e1e2f;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
         .friend-status-dot.online { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
         .friend-status-dot.offline { background: #64748b; }
         .profile-avatar-url-btn {
@@ -956,7 +966,6 @@ function updateFriendList() {
         const friendDot = document.createElement('span');
         friendDot.id = 'friendDot_' + u;
         friendDot.className = 'friend-status-dot offline';
-        friendDot.style.cssText = 'position:absolute;bottom:1px;right:1px;width:12px;height:12px;border-radius:50%;border:2px solid #1e1e2f;';
 
         avatarWrap.appendChild(img);
         avatarWrap.appendChild(friendDot);
