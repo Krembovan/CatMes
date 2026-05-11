@@ -675,7 +675,7 @@ def api_verify_telegram():
         if sent:
             return {'ok': True, 'sent': True, 'message': 'Код отправлен в Telegram!'}
         return {'ok': True, 'sent': False, 'code': code,
-                'message': 'Не удалось отправить код. Напиши боту @CatVerifyBot /start и нажми "Получить код" снова.'}
+                'message': 'Отправь этот код боту @CatVerifyBot в Telegram'}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
 
