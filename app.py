@@ -701,12 +701,13 @@ def handle_leave_group(data):
     if not group['members']:
         del groups[gid]
         save_groups(groups)
+        emit('group_deleted', {'group_id': gid}, room=gid)
     else:
         if user == group['creator'] and group['members']:
             group['creator'] = group['members'][0]
         save_group(gid, group)
+        emit('group_updated', group, room=gid)
     emit('group_left', {'group_id': gid})
-    emit('group_updated', group, room=gid)
 
 @socketio.on('get_group_members')
 def handle_get_group_members(data):

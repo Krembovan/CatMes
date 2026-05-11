@@ -1708,6 +1708,15 @@ socket.on('group_left', function(data) {
     }
 });
 
+socket.on('group_deleted', function(data) {
+    delete groupsData[data.group_id];
+    updateGroupList();
+    if (currentRoom === data.group_id) {
+        switchRoom('Общий');
+    }
+    showToast('Группа удалена (все участники вышли)', 'info');
+});
+
 socket.on('group_members', function(data) {
     if (!data || data.group_id !== currentGroupId) return;
     const group = groupsData[data.group_id];
