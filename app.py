@@ -596,10 +596,13 @@ def admin_panel():
             status = f'<span style="color:#ef4444;">Использован @{html_escape(v["used_by"])}</span>' if v.get('used_by') else '<span style="color:#10b981;">Активен</span>'
             html += f'<tr><td style="font-family:monospace;font-weight:700;">{html_escape(c)}</td><td>@{html_escape(v.get("created_by","?"))}</td><td>{status}</td></tr>'
         html += '</table></div>'
-        html += '<script>function createInvite(){fetch("/api/invite/create",{method:"POST",headers:{"Authorization":"Basic "+btoa("''' + html_escape(un) + '''")}}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById("newCodeDisplay").textContent="🎉 "+d.code;document.getElementById("newCodeDisplay").style.display="block";setTimeout(()=>location.reload(),2000)}else{alert(d.error)}})}</script>'
-    else:
-        html += '<script>'
-    html += '''function deleteUser(un){if(!confirm("Удалить @"+un+"?"))return;fetch("/admin/delete/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}function setRole(un,r){fetch("/admin/setrole/"+un+"/"+r,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}function deleteMsg(ts){fetch("/admin/deletemsg/"+ts,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}</script></body></html>'''
+    html += '<script>'
+    if can:
+        html += 'function createInvite(){fetch("/api/invite/create",{method:"POST"}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById("newCodeDisplay").textContent="\\uD83C\\uDF89 "+d.code;document.getElementById("newCodeDisplay").style.display="block";setTimeout(()=>location.reload(),2000)}else{alert(d.error)}})}'
+    html += 'function deleteUser(un){if(!confirm("\\u0423\\u0434\\u0430\\u043B\\u0438\\u0442\\u044C @"+un+"?"))return;fetch("/admin/delete/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
+    html += 'function setRole(un,r){fetch("/admin/setrole/"+un+"/"+r,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
+    html += 'function deleteMsg(ts){fetch("/admin/deletemsg/"+ts,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
+    html += '</script></body></html>'
     return html
 
 @app.route('/admin/delete/<username>', methods=['POST'])
