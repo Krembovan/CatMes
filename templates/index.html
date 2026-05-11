@@ -192,10 +192,31 @@
             justify-content: center;
             opacity: 0;
             transition: opacity 0.2s;
-            font-size: 0.8rem;
-            pointer-events: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
         }
-        .profile-avatar-container:hover .profile-avatar-overlay { opacity: 1; }
+        .edit-mode .profile-avatar-container:hover .profile-avatar-overlay { opacity: 1; }
+        .profile-avatar-url-btn {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 28px;
+            height: 28px;
+            background: #2d3748;
+            border: 2px solid #161b22;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            cursor: pointer;
+            color: #94a3b8;
+            transition: 0.2s;
+            z-index: 2;
+        }
+        .profile-avatar-url-btn:hover { background: #4a5568; color: white; }
+        .edit-mode .profile-avatar-url-btn { display: flex; }
         .profile-info-block {
             text-align: center;
             margin-bottom: 20px;
@@ -409,11 +430,12 @@
         </div>
         <div class="profile-avatar-container" id="profileAvatarContainer">
             <img id="profileAvatar" class="profile-avatar-img" src="" alt="Аватар">
-            <div class="profile-avatar-overlay">📷 Загрузить</div>
+            <div class="profile-avatar-overlay">📷 Загрузить фото</div>
+            <div class="profile-avatar-url-btn" id="avatarUrlBtn" title="Указать URL">🔗</div>
+            <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
             <div class="avatar-menu" id="avatarMenu">
                 <button id="uploadAvatarBtn">📁 Загрузить файл</button>
                 <button id="urlAvatarBtn">🔗 Указать URL</button>
-                <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
             </div>
         </div>
         <div class="profile-body-scroll" id="profileBodyScroll">
@@ -1446,8 +1468,18 @@ const avatarImg = document.getElementById('profileAvatar');
 
 avatarContainer.addEventListener('click', (e) => {
     if (!isEditingProfile) return;
-    avatarMenu.classList.toggle('show');
+    if (e.target === avatarUrlBtn || e.target.closest('.avatar-menu')) return;
+    fileInput.click();
+});
+
+avatarUrlBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (!isEditingProfile) return;
+    const url = prompt('Введите URL изображения:');
+    if (url) {
+        avatarImg.src = url;
+        avatarImg.setAttribute('data-new-avatar', url);
+    }
 });
 document.addEventListener('click', () => avatarMenu.classList.remove('show'));
 uploadBtn.addEventListener('click', (e) => {
@@ -1461,7 +1493,6 @@ fileInput.addEventListener('change', (e) => {
         reader.onload = (ev) => {
             avatarImg.src = ev.target.result;
             avatarImg.setAttribute('data-new-avatar', ev.target.result);
-            avatarMenu.classList.remove('show');
         };
         reader.readAsDataURL(file);
     }
