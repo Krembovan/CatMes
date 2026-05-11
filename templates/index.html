@@ -290,6 +290,23 @@
             transition: width 0.3s;
         }
         .xp-text { font-size: 0.75rem; color: #94a3b8; text-align: right; }
+        .legendary-level .level-badge {
+            background: linear-gradient(135deg, #f59e0b, #ffd700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .legendary-level .level-title {
+            color: #f59e0b;
+            font-weight: 700;
+        }
+        .legendary-level .progress-fill {
+            background: linear-gradient(90deg, #f59e0b, #ffd700);
+            width: 100% !important;
+        }
+        .legendary-level .xp-text {
+            color: #f59e0b;
+            font-weight: 700;
+        }
         .tabs {
             display: flex;
             border-bottom: 1px solid rgba(255,255,255,0.06);
@@ -1599,7 +1616,7 @@ function updateProfileUI(user, isOwner) {
         xpBlock.style.display = 'block';
     }
     if (xpBlock.style.display === 'block') {
-        updateXpUI(user.xp || 0);
+        updateXpUI(user.xp || 0, user.legendary || false);
     }
 
     const achievementsContent = document.getElementById('achievementsContent');
@@ -1618,7 +1635,17 @@ function updateProfileUI(user, isOwner) {
     avatarContainer.style.pointerEvents = isOwner ? 'auto' : 'none';
 }
 
-function updateXpUI(xp) {
+function updateXpUI(xp, legendary) {
+    const block = document.getElementById('xpBlock');
+    if (legendary) {
+        block.classList.add('legendary-level');
+        document.getElementById('profileLevel').textContent = '∞';
+        document.getElementById('profileLevelTitle').textContent = 'Легендарный уровень';
+        document.getElementById('profileProgress').style.width = '100%';
+        document.getElementById('profileXpText').textContent = '∞ XP';
+        return;
+    }
+    block.classList.remove('legendary-level');
     const level = getLevel(xp);
     const nextXp = getNextLevelXp(level);
     const currentLevelXp = getLevelXp(level);
@@ -1695,6 +1722,26 @@ socket.on('profile_updated', function(data) {
     const actions = document.querySelector('.profile-actions');
     if (actions) actions.classList.remove('show');
     updateProfileUI(myData, true);
+});
+
+socket.on('legendary_update', function(data) {
+    if (myData) {
+        myData.legendary = data.legendary;
+        if (document.getElementById('profileModal').style.display === 'flex') {
+            updateXpUI(myData.xp || 0, myData.legendary);
+        }
+    }
+    showToast(data.legendary ? '👑 Статус Легенды присвоен!' : '⭐ Легендарный статус снят', 'success');
+});
+
+socket.on('xp_awarded', function(data) {
+    if (myData) {
+        myData.xp = data.total;
+        if (document.getElementById('profileModal').style.display === 'flex') {
+            updateXpUI(myData.xp || 0, myData.legendary || false);
+        }
+    }
+    showToast('+' + data.amount + ' XP получено!', 'success');
 });
 
 function getLevel(xp) {

@@ -190,7 +190,7 @@ def handle_auth(data):
             'username': un, 'display_name': dn or un, 'pass': hash_password(pwd),
             'avatar': f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
             'bio': 'Пользователь CAT', 'friends': [], 'requests': [], 'notifications': [], 'role': get_role(un),
-            'xp': 0, 'achievements': [], 'telegram_verified': False, 'birthday': '', 'created_at': time.time()
+            'xp': 0, 'achievements': [], 'telegram_verified': False, 'birthday': '', 'created_at': time.time(), 'legendary': False
         }
         save_user(un, new_user)
         user_sessions[un] = request.sid
@@ -214,6 +214,7 @@ def handle_auth(data):
         user_data.setdefault('achievements', [])
         user_data.setdefault('telegram_verified', False)
         user_data.setdefault('birthday', '')
+        user_data.setdefault('legendary', False)
         user_sessions[un] = request.sid
         user_data['online'] = True
         user_data['last_seen'] = time.time()
@@ -553,7 +554,8 @@ def handle_get_user_profile(data):
             'xp': user.get('xp', 0),
             'achievements': user.get('achievements', []),
             'telegram_verified': user.get('telegram_verified', False),
-            'birthday': user.get('birthday', '')
+            'birthday': user.get('birthday', ''),
+            'legendary': user.get('legendary', False)
         }
     })
 
@@ -621,6 +623,7 @@ def admin_panel():
             'display_name': d.get('display_name',''),
             'role': d.get('role','user'),
             'xp': d.get('xp', 0),
+            'legendary': d.get('legendary', False),
             'friends': len(d.get('friends',[])),
             'requests': len(d.get('requests',[]))
         })
@@ -668,6 +671,9 @@ def admin_panel():
             if can_manage_roles:
                 html += f' <input type="number" id="xpInput-{html_escape(u["username"])}" min="1" value="1" style="width:50px;background:#0d1117;color:white;border:1px solid rgba(255,255,255,0.1);padding:4px;border-radius:6px;">'
                 html += f' <button class="btn btn-sm" onclick="addXp(\'{html_escape(u["username"])}\')">➕XP</button>'
+                if is_owner:
+                    status = '★' if u.get('legendary') else '☆'
+                    html += f' <button class="btn btn-sm" onclick="setLegendary(\'{html_escape(u["username"])}\')" style="background:#f59e0b;color:#0d1117;">{status}</button>'
             html += '</td>'
         elif can_manage_roles:
             html += '<td>'
@@ -679,6 +685,9 @@ def admin_panel():
             html += '</select>'
             html += f' <input type="number" id="xpInput-{html_escape(u["username"])}" min="1" value="1" style="width:50px;background:#0d1117;color:white;border:1px solid rgba(255,255,255,0.1);padding:4px;border-radius:6px;">'
             html += f' <button class="btn btn-sm" onclick="addXp(\'{html_escape(u["username"])}\')">➕XP</button>'
+            if is_owner:
+                status = '★' if u.get('legendary') else '☆'
+                html += f' <button class="btn {"btn-sm"}" onclick="setLegendary(\'{html_escape(u["username"])}\')" style="background:#f59e0b;color:#0d1117;">{status}</button>'
             if can_delete_user:
                 html += f' <button class="btn btn-danger" onclick="deleteUser(\'{html_escape(u["username"])}\')">Удалить</button>'
             html += '</td>'
@@ -709,6 +718,7 @@ def admin_panel():
     html += 'function setRole(un,r){fetch("/admin/setrole/"+un+"/"+r,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
     html += 'function deleteMsg(ts){fetch("/admin/deletemsg/"+ts,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
     html += 'function addXp(un){var am=document.getElementById("xpInput-"+un).value;fetch("/admin/addxp/"+un+"/"+am,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
+    html += 'function setLegendary(un){fetch("/admin/setlegendary/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
     html += '</script></body></html>'
     return html
 
@@ -742,6 +752,22 @@ def admin_add_xp(username, amount):
         save_db('users', users)
         notify_user(un, 'xp_awarded', {'amount': xp_amount, 'total': users[un]['xp']})
         return {'message': f'@{un} получил {xp_amount} XP (всего: {users[un]["xp"]})'}
+    return {'message': 'Пользователь не найден'}
+
+@app.route('/admin/setlegendary/<username>', methods=['POST'])
+def admin_set_legendary(username):
+    requester_un = request.authorization.username.lower() if request.authorization else ''
+    requester_role = get_role(requester_un)
+    if requester_role != 'owner':
+        return {'message': 'Только Владелец может выдавать легендарный статус'}
+    un = username.lower()
+    users = load_users()
+    if un in users:
+        users[un]['legendary'] = not users[un].get('legendary', False)
+        save_db('users', users)
+        status = 'присвоен' if users[un]['legendary'] else 'снят'
+        notify_user(un, 'legendary_update', {'legendary': users[un]['legendary']})
+        return {'message': f'@{un} — легендарный статус {status}'}
     return {'message': 'Пользователь не найден'}
 
 @app.route('/admin/setrole/<username>/<role>', methods=['POST'])
