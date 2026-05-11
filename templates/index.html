@@ -911,16 +911,30 @@ socket.on('friend_msg', function(d) {
     }
 });
 
-socket.on('incoming_friend_request', function() {
+socket.on('incoming_friend_request', function(d) {
+    if (d && d.user && myData) {
+        myData.requests = d.user.requests || [];
+        myData.notifications = d.user.notifications || myData.notifications;
+    }
     updateFriendList();
 });
 
-socket.on('friend_accepted_notify', function() {
+socket.on('friend_accepted_notify', function(d) {
+    if (d && d.user && myData) {
+        myData.friends = d.user.friends || [];
+        myData.requests = (myData.requests || []).filter(function(r) { return r !== d.by; });
+    }
     updateFriendList();
+    updateRoomList();
 });
 
-socket.on('friend_removed_notify', function() {
+socket.on('friend_removed_notify', function(d) {
+    if (d && d.user && myData) {
+        myData.friends = d.user.friends || [];
+        myData.requests = d.user.requests || [];
+    }
     updateFriendList();
+    updateRoomList();
 });
 
 socket.on('friend_online', function(d) {
