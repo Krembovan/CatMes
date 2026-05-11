@@ -192,37 +192,129 @@
             justify-content: center;
             opacity: 0;
             transition: opacity 0.2s;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
+            pointer-events: none;
+        }
+        .profile-avatar-container:hover .profile-avatar-overlay { opacity: 1; }
+        .profile-info-block {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .profile-display-name { font-weight: 700; font-size: 1.3rem; }
+        .profile-handle { color: #94a3b8; font-size: 0.9rem; }
+        .profile-status { font-size: 0.85rem; margin-top: 5px; }
+        .online-dot { color: #22c55e; }
+        .role {
+            font-size: 0.8rem;
             font-weight: 600;
-            letter-spacing: 0.5px;
-            backdrop-filter: blur(2px);
-            cursor: pointer;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: inline-block;
+            margin-top: 5px;
         }
-        .edit-mode .profile-avatar-container:hover .profile-avatar-overlay { opacity: 1; }
-        .profile-avatar-url-btn {
-            position: absolute;
-            bottom: -2px;
-            right: -2px;
-            width: 28px;
-            height: 28px;
-            background: #2d3748;
-            border: 2px solid #161b22;
-            border-radius: 50%;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.75rem;
-            cursor: pointer;
+        .role-owner { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+        .role-admin { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .role-moderator { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .role-user { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+        .verification-plate {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 16px;
+            padding: 30px;
+            text-align: center;
             color: #94a3b8;
-            transition: 0.2s;
-            z-index: 2;
+            margin-bottom: 20px;
         }
-        .profile-avatar-url-btn:hover { background: #4a5568; color: white; }
-        .edit-mode .profile-avatar-url-btn { display: flex; }
+        .verification-plate .icon { font-size: 2rem; margin-bottom: 10px; }
+        .verification-plate .title { font-weight: 600; font-size: 1.1rem; margin-bottom: 5px; color: #e2e8f0; }
+        .verification-plate .desc { font-size: 0.85rem; margin-bottom: 15px; }
+        .btn-verify {
+            background: #7c5cfc;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .xp-section {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .level-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .level-badge {
+            font-size: 1.8rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #7c5cfc, #38bdf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .level-title { font-size: 0.85rem; color: #94a3b8; }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #7c5cfc, #38bdf8);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        .xp-text { font-size: 0.75rem; color: #94a3b8; text-align: right; }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            margin-bottom: 20px;
+            gap: 5px;
+        }
+        .tab {
+            padding: 8px 18px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: #94a3b8;
+            font-size: 0.9rem;
+            transition: 0.2s;
+        }
+        .tab.active {
+            color: #e2e8f0;
+            border-bottom-color: #7c5cfc;
+        }
+        .about-section {
+            color: #94a3b8;
+            line-height: 1.6;
+            min-height: 60px;
+        }
+        .achievements-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .achievement {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        .achievement .icon { font-size: 1.5rem; width: 40px; text-align: center; }
+        .achievement .info { flex: 1; }
+        .achievement .name { font-weight: 600; }
+        .achievement .desc { font-size: 0.8rem; color: #94a3b8; }
+        .achievement .status { font-size: 0.8rem; font-weight: 600; }
+        .achieved { color: #10b981; }
+        .locked { color: #ef4444; opacity: 0.6; }
+        .in-progress { color: #f59e0b; }
         .avatar-menu {
-            display: none;
-            position: absolute;
-            top: 85px;
             display: none;
             position: absolute;
             top: 85px;
@@ -317,9 +409,12 @@
         </div>
         <div class="profile-avatar-container" id="profileAvatarContainer">
             <img id="profileAvatar" class="profile-avatar-img" src="" alt="Аватар">
-            <div class="profile-avatar-overlay">📷 Загрузить фото</div>
-            <div class="profile-avatar-url-btn" id="avatarUrlBtn" title="Указать URL">🔗</div>
-            <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
+            <div class="profile-avatar-overlay">📷 Загрузить</div>
+            <div class="avatar-menu" id="avatarMenu">
+                <button id="uploadAvatarBtn">📁 Загрузить файл</button>
+                <button id="urlAvatarBtn">🔗 Указать URL</button>
+                <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
+            </div>
         </div>
         <div class="profile-body-scroll" id="profileBodyScroll">
             <div class="profile-info-block">
@@ -1343,26 +1438,22 @@ function timeAgo(d) {
 let isEditingProfile = false;
 
 const avatarContainer = document.getElementById('profileAvatarContainer');
+const avatarMenu = document.getElementById('avatarMenu');
+const uploadBtn = document.getElementById('uploadAvatarBtn');
+const urlBtn = document.getElementById('urlAvatarBtn');
 const fileInput = document.getElementById('avatarFileInput');
 const avatarImg = document.getElementById('profileAvatar');
-const avatarUrlBtn = document.getElementById('avatarUrlBtn');
 
 avatarContainer.addEventListener('click', (e) => {
     if (!isEditingProfile) return;
-    if (e.target === avatarUrlBtn) return;
+    avatarMenu.classList.toggle('show');
+    e.stopPropagation();
+});
+document.addEventListener('click', () => avatarMenu.classList.remove('show'));
+uploadBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     fileInput.click();
 });
-
-avatarUrlBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!isEditingProfile) return;
-    const url = prompt('Введите URL изображения:');
-    if (url) {
-        avatarImg.src = url;
-        avatarImg.setAttribute('data-new-avatar', url);
-    }
-});
-
 fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file && file.type.startsWith('image/')) {
@@ -1370,10 +1461,20 @@ fileInput.addEventListener('change', (e) => {
         reader.onload = (ev) => {
             avatarImg.src = ev.target.result;
             avatarImg.setAttribute('data-new-avatar', ev.target.result);
+            avatarMenu.classList.remove('show');
         };
         reader.readAsDataURL(file);
     }
     fileInput.value = '';
+});
+urlBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const url = prompt('Введите URL изображения:');
+    if (url) {
+        avatarImg.src = url;
+        avatarImg.setAttribute('data-new-avatar', url);
+        avatarMenu.classList.remove('show');
+    }
 });
 
 document.getElementById('editProfileBtn').addEventListener('click', () => {
