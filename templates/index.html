@@ -1257,22 +1257,31 @@ function deleteFolder(fid) {
 }
 
 function addChatsToFolder(fid) {
+    document.querySelector('.modal-overlay.active')?.remove();
     const folder = folders[fid];
     if (!folder) return;
     const allChats = [];
+    const seen = {};
     allChats.push({ key: 'Общий', name: 'Общий канал', icon: '🌍' });
     allChats.push({ key: 'Новости', name: 'Новости', icon: '📢' });
+    seen['Общий'] = true; seen['Новости'] = true;
     Object.keys(groupsData).forEach(function(gid) {
         allChats.push({ key: gid, name: groupsData[gid].name, icon: '👥' });
+        seen[gid] = true;
     });
     Object.keys(dmActivity).forEach(function(room) {
-        allChats.push({ key: room, name: dmActivity[room].display_name, icon: '💬' });
+        if (!seen[room]) { allChats.push({ key: room, name: dmActivity[room].display_name, icon: '💬' }); seen[room] = true; }
     });
-    let html = '<h3 style="text-align:center;margin:0 0 15px;">Добавить чаты в «' + escapeHtml(folder.name) + '»</h3><div style="max-height:300px;overflow-y:auto;">';
+    (myData.friends || []).forEach(function(f) {
+        var room = getDmKey(f);
+        if (!seen[room]) { allChats.push({ key: room, name: f, icon: '💬' }); seen[room] = true; }
+    });
+    allChats.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    let html = '<h3 style="text-align:center;margin:0 0 15px;">Добавить чаты в «' + escapeHtml(folder.name) + '»</h3><div id="chatListForFolder" style="max-height:300px;overflow-y:auto;">';
     allChats.forEach(function(chat) {
         const checked = folder.chats.indexOf(chat.key) !== -1 ? 'checked' : '';
-        html += '<div style="padding:8px 10px;border-radius:8px;margin:2px 0;display:flex;align-items:center;gap:10px;">' +
-            '<input type="checkbox" ' + checked + ' onchange="toggleChatInFolder(\'' + fid + '\',\'' + chat.key + '\',this.checked)" style="width:18px;height:18px;">' +
+        html += '<div class="folder-chat-item" data-fid="' + fid + '" data-key="' + escapeHtml(chat.key) + '" style="padding:8px 10px;border-radius:8px;margin:2px 0;display:flex;align-items:center;gap:10px;">' +
+            '<input type="checkbox" ' + checked + ' style="width:18px;height:18px;">' +
             '<span>' + chat.icon + ' ' + escapeHtml(chat.name) + '</span></div>';
     });
     html += '</div>';
@@ -1280,8 +1289,17 @@ function addChatsToFolder(fid) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
     modal.style.position = 'fixed';
+    modal.id = 'folderChatModal';
     modal.innerHTML = '<div class="modal" style="max-width:350px;padding:20px;">' + html + '</div>';
     document.body.appendChild(modal);
+    document.getElementById('chatListForFolder').addEventListener('change', function(e) {
+        if (e.target.tagName === 'INPUT' && e.target.type === 'checkbox') {
+            const div = e.target.closest('.folder-chat-item');
+            if (div) {
+                toggleChatInFolder(div.dataset.fid, div.dataset.key, e.target.checked);
+            }
+        }
+    });
 }
 
 function toggleChatInFolder(fid, chatKey, add) {
