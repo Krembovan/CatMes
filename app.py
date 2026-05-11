@@ -50,6 +50,17 @@ def save_message(msg):
         msgs = msgs[-500:]
     save_db('messages', msgs)
 
+def load_groups():
+    return load_db('groups')
+
+def save_groups(groups):
+    save_db('groups', groups)
+
+def save_group(gid, data):
+    groups = load_db('groups')
+    groups[gid] = data
+    save_db('groups', groups)
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
     h = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
@@ -232,6 +243,10 @@ def handle_auth(data):
             award_achievement(un, 'dictator')
         check_pioneer(un)
         notify_friends(un, 'friend_online', {'username': un, 'online': True})
+        groups = load_groups()
+        for gid, g in groups.items():
+            if un in g['members']:
+                join_room(gid)
         emit('auth_result', {'success': True, 'user': user_data})
 
 @socketio.on('update_profile')
@@ -610,6 +625,107 @@ def handle_call_accepted(data):
 @socketio.on('call_signal')
 def handle_call_signal(data):
     notify_user(data.get('to'), 'call_signal', {'ice': data.get('ice')})
+
+# ========== GROUPS ==========
+
+@socketio.on('create_group')
+def handle_create_group(data):
+    user = data.get('username', '').lower()
+    if not user:
+        return
+    name = data.get('name', '').strip()
+    if not name or len(name) > 50:
+        emit('error_msg', {'text': 'Название группы: 1-50 символов'})
+        return
+    gid = 'group_' + str(uuid.uuid4())[:8]
+    group = {
+        'id': gid,
+        'name': name,
+        'creator': user,
+        'members': [user],
+        'created_at': time.time()
+    }
+    save_group(gid, group)
+    join_room(gid)
+    emit('group_created', group)
+
+@socketio.on('get_groups')
+def handle_get_groups(data=None):
+    user = data.get('username', '').lower() if data else None
+    if not user:
+        return
+    groups = load_groups()
+    user_groups = {}
+    for gid, g in groups.items():
+        if user in g['members']:
+            user_groups[gid] = g
+            join_room(gid)
+    emit('groups_list', user_groups)
+
+@socketio.on('invite_to_group')
+def handle_invite_to_group(data):
+    user = data.get('username', '').lower()
+    if not user:
+        return
+    gid = data.get('group_id', '')
+    target = data.get('target', '').lower().replace('@', '')
+    groups = load_groups()
+    group = groups.get(gid)
+    if not group or user != group['creator']:
+        emit('error_msg', {'text': 'Только создатель может приглашать'})
+        return
+    if target in group['members']:
+        emit('error_msg', {'text': 'Уже в группе'})
+        return
+    users = load_users()
+    if target not in users:
+        emit('error_msg', {'text': 'Пользователь не найден'})
+        return
+    group['members'].append(target)
+    save_group(gid, group)
+    notify_user(target, 'invited_to_group', {'group': group, 'invited_by': user})
+    emit('group_updated', group)
+    emit('group_updated', group, room=gid)
+
+@socketio.on('leave_group')
+def handle_leave_group(data):
+    user = data.get('username', '').lower()
+    if not user:
+        return
+    gid = data.get('group_id', '')
+    groups = load_groups()
+    group = groups.get(gid)
+    if not group or user not in group['members']:
+        return
+    group['members'].remove(user)
+    if not group['members']:
+        del groups[gid]
+        save_groups(groups)
+    else:
+        if user == group['creator'] and group['members']:
+            group['creator'] = group['members'][0]
+        save_group(gid, group)
+    emit('group_left', {'group_id': gid})
+    emit('group_updated', group, room=gid)
+
+@socketio.on('get_group_members')
+def handle_get_group_members(data):
+    gid = data.get('group_id', '')
+    groups = load_groups()
+    group = groups.get(gid)
+    if not group:
+        return
+    users = load_users()
+    members = []
+    for m in group['members']:
+        u = users.get(m, {})
+        members.append({
+            'username': m,
+            'display_name': u.get('display_name') or m,
+            'avatar': u.get('avatar', ''),
+            'online': m in user_sessions
+        })
+    emit('group_members', {'group_id': gid, 'members': members})
 
 @app.route('/admin')
 def admin_panel():

@@ -695,6 +695,8 @@
             <div id="roomList"></div>
             <div class="section-label">👥 Друзья</div>
             <div id="friendList"></div>
+            <div class="section-label">👥 Группы <span class="icon-btn" style="font-size:0.8rem;margin-left:5px;" onclick="showCreateGroup()" title="Создать группу">➕</span></div>
+            <div id="groupList"></div>
         </div>
         <div class="profile-mini" onclick="openModal('profileOverlay'); loadProfile();">
             <img id="myAvatar" class="avatar-mini" src="" alt="Аватар">
@@ -709,6 +711,11 @@
         <div class="chat-header">
             <span class="back-btn" onclick="goBack()">←</span>
             <span id="chatHeader">CAT</span>
+            <span id="groupActions" style="display:none;margin-left:auto;gap:8px;">
+                <button class="icon-btn" id="groupMembersBtn" onclick="showGroupMembers()" title="Участники">👥</button>
+                <button class="icon-btn" id="groupInviteBtn" onclick="showGroupInvite()" title="Пригласить">➕</button>
+                <button class="icon-btn" id="groupLeaveBtn" onclick="leaveCurrentGroup()" title="Покинуть группу">🚪</button>
+            </span>
         </div>
         <div id="messages">
             <div class="empty-chat">
@@ -740,6 +747,8 @@ let notifications = [];
 let dmUser = null;
 let replyTo = null;
 let unreadCounts = {};
+let groupsData = {};
+let currentGroupId = null;
 
 const ESC_MAP = {
     '&': '&amp;',
@@ -910,6 +919,7 @@ socket.on('auth_result', function(data) {
         updateBadge();
         updateFriendList();
         if (isLogin) updateRoomList();
+        socket.emit('get_groups', { username: myData.username });
     } else {
         if (document.getElementById('registerForm').style.display === 'block') {
             document.getElementById('regError').textContent = data.error;
@@ -1133,6 +1143,85 @@ function updateRoomList() {
     });
 }
 
+// ========== ГРУППЫ ==========
+function updateGroupList() {
+    const list = document.getElementById('groupList');
+    list.innerHTML = '';
+    const entries = Object.entries(groupsData);
+    if (entries.length === 0) {
+        list.innerHTML = '<div style="padding:8px 12px;color:var(--text-secondary);font-size:0.8rem;">Нет групп</div>';
+        return;
+    }
+    entries.forEach(function([gid, g]) {
+        const div = document.createElement('div');
+        div.className = 'chat-item';
+        div.setAttribute('data-room', gid);
+        div.onclick = function() { switchRoom(gid); };
+        div.innerHTML = '<div class="chat-avatar">👥</div><span>' + escapeHtml(g.name) + '</span>' +
+            '<span class="unread-badge" id="unread_' + gid + '"></span>';
+        list.appendChild(div);
+    });
+}
+
+function showCreateGroup() {
+    const name = prompt('Название новой группы:');
+    if (name && name.trim()) {
+        socket.emit('create_group', { username: myData.username, name: name.trim() });
+    }
+}
+
+function showGroupInvite() {
+    if (!currentGroupId) return;
+    const group = groupsData[currentGroupId];
+    if (!group) return;
+    if (group.creator !== myData.username) {
+        showToast('Только создатель может приглашать', 'error');
+        return;
+    }
+    const friends = myData.friends || [];
+    const notInGroup = friends.filter(function(f) { return !group.members.includes(f); });
+    if (notInGroup.length === 0) {
+        showToast('Некого приглашать — все друзья уже в группе', 'error');
+        return;
+    }
+    let html = '<div style="padding:5px"><h3>Пригласить в «' + escapeHtml(group.name) + '»</h3>';
+    notInGroup.forEach(function(f) {
+        html += '<div class="friend-item" onclick="inviteToGroup(\'' + f + '\')" style="cursor:pointer;padding:8px;border-bottom:1px solid var(--border);">👤 @' + f + '</div>';
+    });
+    html += '</div>';
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.style.position = 'fixed';
+    modal.innerHTML = '<div class="modal" style="max-width:350px;">' + html + '<button class="btn" onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:10px;width:100%;">Закрыть</button></div>';
+    document.body.appendChild(modal);
+}
+
+function inviteToGroup(username) {
+    socket.emit('invite_to_group', { username: myData.username, group_id: currentGroupId, target: username });
+    showToast('Приглашение отправлено @' + username, 'success');
+    document.querySelector('.modal-overlay.active')?.remove();
+}
+
+function showGroupMembers() {
+    if (!currentGroupId) return;
+    const group = groupsData[currentGroupId];
+    if (!group) return;
+    socket.emit('get_group_members', { group_id: currentGroupId });
+}
+
+function leaveCurrentGroup() {
+    if (!currentGroupId) return;
+    if (!confirm('Покинуть группу?')) return;
+    socket.emit('leave_group', { username: myData.username, group_id: currentGroupId });
+}
+
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/[&<>"']/g, function(c) {
+        return ESC_MAP[c] || c;
+    });
+}
+
 // ========== УВЕДОМЛЕНИЯ ==========
 function toggleNotifPanel() {
     const p = document.getElementById('notifPanel');
@@ -1252,13 +1341,17 @@ socket.on('new_notification', function(n) {
 // ========== ЧАТ И ОСТАЛЬНЫЕ ФУНКЦИИ (без сокращений) ==========
 function switchRoom(r) {
     currentRoom = r;
+    currentGroupId = r.startsWith('group_') ? r : null;
     document.getElementById('messages').innerHTML = '';
     replyTo = null;
     cancelReply();
 
+    const groupActions = document.getElementById('groupActions');
+
     if (r === 'Общий') {
         document.getElementById('chatHeader').textContent = '# Общий канал';
         dmUser = null;
+        groupActions.style.display = 'none';
     } else if (r.startsWith('dm_')) {
         document.getElementById('chatHeader').textContent = dmUser ? '💬 @' + dmUser : '💬 Личные сообщения';
         const dmKey = 'dm_' + dmUser;
@@ -1266,9 +1359,20 @@ function switchRoom(r) {
             delete unreadCounts[dmKey];
             updateUnreadBadge(dmKey);
         }
+        groupActions.style.display = 'none';
+    } else if (r.startsWith('group_')) {
+        const group = groupsData[r];
+        document.getElementById('chatHeader').textContent = group ? '👥 ' + group.name : '# ' + r;
+        dmUser = null;
+        groupActions.style.display = 'inline-flex';
+        if (unreadCounts[r]) {
+            delete unreadCounts[r];
+            updateUnreadBadge(r);
+        }
     } else {
         document.getElementById('chatHeader').textContent = '# ' + r;
         dmUser = null;
+        groupActions.style.display = 'none';
     }
 
     const inputBox = document.querySelector('.input-box');
@@ -1568,6 +1672,59 @@ socket.on('new_dm', function(data) {
         showToast('💬 ' + data.from + ': ' + data.text, 'info');
         if (!document.hasFocus()) { showBrowserNotification('💬 ' + data.from, data.text, data.room || ''); }
     }
+});
+
+// ========== ГРУППЫ (сокет) ==========
+socket.on('groups_list', function(groups) {
+    groupsData = groups || {};
+    updateGroupList();
+});
+
+socket.on('group_created', function(group) {
+    groupsData[group.id] = group;
+    updateGroupList();
+    switchRoom(group.id);
+    showToast('Группа «' + group.name + '» создана', 'success');
+});
+
+socket.on('invited_to_group', function(data) {
+    const g = data.group;
+    groupsData[g.id] = g;
+    updateGroupList();
+    showToast('Вас пригласили в группу «' + g.name + '»', 'info');
+    socket.emit('join', { room: g.id });
+});
+
+socket.on('group_updated', function(group) {
+    groupsData[group.id] = group;
+    updateGroupList();
+});
+
+socket.on('group_left', function(data) {
+    delete groupsData[data.group_id];
+    updateGroupList();
+    if (currentRoom === data.group_id) {
+        switchRoom('Общий');
+    }
+});
+
+socket.on('group_members', function(data) {
+    if (!data || data.group_id !== currentGroupId) return;
+    const group = groupsData[data.group_id];
+    if (!group) return;
+    let html = '<div style="padding:5px"><h3>👥 ' + escapeHtml(group.name) + ' — участники</h3>';
+    data.members.forEach(function(m) {
+        const online = m.online ? '🟢' : '⚫';
+        html += '<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
+            '<img src="' + safeAvatarUrl(m.avatar, m.username) + '" style="width:28px;height:28px;border-radius:50%;">' +
+            online + ' <span>' + escapeHtml(m.display_name) + '</span> <span style="color:var(--text-secondary);font-size:0.8rem;">@' + m.username + '</span></div>';
+    });
+    html += '</div>';
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.style.position = 'fixed';
+    modal.innerHTML = '<div class="modal" style="max-width:350px;">' + html + '<button class="btn" onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:10px;width:100%;">Закрыть</button></div>';
+    document.body.appendChild(modal);
 });
 
 document.getElementById('loginPass').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleLogin(); });
