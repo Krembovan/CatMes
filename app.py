@@ -620,6 +620,7 @@ def admin_panel():
             'username': uname,
             'display_name': d.get('display_name',''),
             'role': d.get('role','user'),
+            'xp': d.get('xp', 0),
             'friends': len(d.get('friends',[])),
             'requests': len(d.get('requests',[]))
         })
@@ -654,14 +655,14 @@ def admin_panel():
     </style></head><body><h1>⚡ CAT Admin Panel</h1><div class="user-info">Вы вошли как: @''' + html_escape(un) + ''' (''' + {'owner':'Владелец','admin':'Админ','moderator':'Модер'}.get(get_role(un),'') + ''')</div>
     <div class="stats"><div class="stat-card"><div class="stat-value">''' + str(len(users_list)) + '''</div><div class="stat-label">Пользователей</div></div>
     <div class="stat-card"><div class="stat-value">''' + str(len(msgs)) + '''</div><div class="stat-label">Сообщений</div></div></div>
-    <div class="section"><h2>👥 Пользователи</h2><table><tr><th>Username</th><th>Имя</th><th>Роль</th><th>Друзья</th><th>Запросы</th>'''
+    <div class="section"><h2>👥 Пользователи</h2><table><tr><th>Username</th><th>Имя</th><th>Роль</th><th>XP</th><th>Друзья</th><th>Запросы</th>'''
     if can_manage_roles: 
         html += '<th>Действия</th>'
     html += '</tr>'
     for u in users_list:
         bc = 'badge-' + ('owner' if u['role']=='owner' else 'admin' if u['role']=='admin' else 'mod' if u['role']=='moderator' else 'user')
         rn = {'owner':'Владелец','admin':'Админ','moderator':'Модер','user':'Пользователь'}.get(u['role'],u['role'])
-        html += f'<tr><td>@{html_escape(u["username"])}</td><td>{html_escape(u["display_name"])}</td><td><span class="badge {bc}">{html_escape(rn)}</span></td><td>{u["friends"]}</td><td>{u["requests"]}</td>'
+        html += f'<tr><td>@{html_escape(u["username"])}</td><td>{html_escape(u["display_name"])}</td><td><span class="badge {bc}">{html_escape(rn)}</span></td><td>{u["xp"]}</td><td>{u["friends"]}</td><td>{u["requests"]}</td>'
         if u['role'] == 'owner':
             html += '<td><span style="color:#f59e0b;">Владелец</span></td>'
         elif can_manage_roles:
@@ -672,6 +673,8 @@ def admin_panel():
             if is_owner:
                 html += f'<option value="admin" {"selected" if u["role"]=="admin" else ""}>Админ</option>'
             html += '</select>'
+            html += f' <input type="number" id="xpInput-{html_escape(u["username"])}" min="1" value="1" style="width:50px;background:#0d1117;color:white;border:1px solid rgba(255,255,255,0.1);padding:4px;border-radius:6px;">'
+            html += f' <button class="btn btn-sm" onclick="addXp(\'{html_escape(u["username"])}\')">➕XP</button>'
             if can_delete_user:
                 html += f' <button class="btn btn-danger" onclick="deleteUser(\'{html_escape(u["username"])}\')">Удалить</button>'
             html += '</td>'
@@ -701,6 +704,7 @@ def admin_panel():
     html += 'function deleteUser(un){if(!confirm("\\u0423\\u0434\\u0430\\u043B\\u0438\\u0442\\u044C @"+un+"?"))return;fetch("/admin/delete/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
     html += 'function setRole(un,r){fetch("/admin/setrole/"+un+"/"+r,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
     html += 'function deleteMsg(ts){fetch("/admin/deletemsg/"+ts,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
+    html += 'function addXp(un){var am=document.getElementById("xpInput-"+un).value;fetch("/admin/addxp/"+un+"/"+am,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
     html += '</script></body></html>'
     return html
 
@@ -713,6 +717,28 @@ def admin_delete_user(username):
     users.pop(un, None)
     save_db('users', users)
     return {'message': f'Пользователь @{un} удалён'}
+
+@app.route('/admin/addxp/<username>/<amount>', methods=['POST'])
+def admin_add_xp(username, amount):
+    requester_un = request.authorization.username.lower() if request.authorization else ''
+    requester_role = get_role(requester_un)
+    if requester_role not in ['owner', 'admin']:
+        return {'message': 'Нет прав'}
+    un = username.lower()
+    try:
+        xp_amount = int(amount)
+        if xp_amount <= 0:
+            return {'message': 'XP должно быть больше 0'}
+    except ValueError:
+        return {'message': 'Некорректное количество XP'}
+    users = load_users()
+    if un in users:
+        users[un].setdefault('xp', 0)
+        users[un]['xp'] += xp_amount
+        save_db('users', users)
+        notify_user(un, 'xp_awarded', {'amount': xp_amount, 'total': users[un]['xp']})
+        return {'message': f'@{un} получил {xp_amount} XP (всего: {users[un]["xp"]})'}
+    return {'message': 'Пользователь не найден'}
 
 @app.route('/admin/setrole/<username>/<role>', methods=['POST'])
 def admin_set_role(username, role):
