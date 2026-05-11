@@ -1614,7 +1614,7 @@ function updateProfileUI(user, isOwner) {
         bdayView.textContent = '';
     }
     document.getElementById('profileAvatar').src = safeAvatarUrl(user.avatar, user.username);
-    document.getElementById('profileDisplayName').textContent = user.display_name || user.username;
+    document.getElementById('profileDisplayName').textContent = user.display_name || user.username || 'User';
     document.getElementById('profileHandle').textContent = '@' + user.username;
     document.getElementById('profileFriendsCount').textContent = (user.friends ? user.friends.length : 0) + ' друзей';
     const roleEl = document.getElementById('profileRole');

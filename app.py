@@ -549,7 +549,8 @@ def handle_get_user_profile(data):
     emit('user_profile', {
         'username': target_un,
         'user': {
-            'display_name': user.get('display_name', target_un),
+            'username': target_un,
+            'display_name': user.get('display_name') or target_un,
             'avatar': user.get('avatar', ''),
             'bio': user.get('bio', ''),
             'friends': user.get('friends', []),
