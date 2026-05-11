@@ -652,11 +652,16 @@ def admin_set_role(username, role):
     requester_role = get_role(requester_un)
     if requester_role not in ['owner', 'admin']:
         return {'message': 'Нет прав'}
-    if requester_role == 'admin' and role not in ['user', 'moderator']:
-        return {'message': 'Админ может назначить только роль Модератора'}
+    un = username.lower()
+    if requester_role == 'admin':
+        if un == requester_un:
+            return {'message': 'Админ не может изменить свою роль'}
+        if get_role(un) in ['owner', 'admin']:
+            return {'message': 'Админ не может изменить роль другого админа'}
+        if role not in ['user', 'moderator']:
+            return {'message': 'Админ может назначить только роль Модератора'}
     if role not in ['user', 'moderator', 'admin', 'owner']:
         return {'message': 'Некорректная роль'}
-    un = username.lower()
     users = load_users()
     if un in users:
         users[un]['role'] = role
