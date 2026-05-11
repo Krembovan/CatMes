@@ -26,8 +26,10 @@
         .icon-btn:hover { background: var(--primary); border-color: var(--primary); }
         .badge-count { position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; font-size: 0.6rem; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; display: none; }
         .badge-count.show { display: flex; }
-        .folder-tabs { display: flex; gap: 4px; padding: 8px 12px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-        .folder-tabs::-webkit-scrollbar { display: none; }
+        .folder-tabs { display: flex; gap: 4px; padding: 8px 12px; overflow-x: auto; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .folder-tabs::-webkit-scrollbar { height: 3px; }
+        .folder-tabs::-webkit-scrollbar-track { background: transparent; }
+        .folder-tabs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
         .folder-tab { padding: 5px 12px; border-radius: 10px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); transition: 0.2s; }
         .folder-tab:hover { color: var(--text); border-color: var(--primary); }
         .folder-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
@@ -1085,7 +1087,7 @@ function updateFriendList() {
         socket.emit('check_status', { username: u });
     });
 
-    if (l.children.length === 0) {
+    if (l.children.length === 0 && !hasFolderFilter) {
         const empty = document.createElement('div');
         empty.style.cssText = 'padding:10px;color:var(--text-secondary);font-size:0.8rem;';
         empty.textContent = 'Нет друзей';
@@ -1392,6 +1394,18 @@ function toggleSections() {
     if (activeFolder === 'all' || activeFolder === 'groups') { createGrp.style.display = 'flex'; } else { createGrp.style.display = 'none'; }
 }
 
+setTimeout(function() {
+    var ft = document.getElementById('folderTabs');
+    if (ft) {
+        ft.addEventListener('wheel', function(e) {
+            if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                this.scrollLeft += e.deltaY;
+                e.preventDefault();
+            }
+        }, { passive: false });
+    }
+}, 100);
+
 // ========== КОМНАТЫ ==========
 function updateRoomList() {
     const list = document.getElementById('roomList');
@@ -1422,10 +1436,6 @@ function updateGroupList() {
         const tb = groupActivity[b[0]] || 0;
         return tb - ta;
     });
-    if (entries.length === 0) {
-        list.innerHTML = '<div style="padding:8px 12px;color:var(--text-secondary);font-size:0.8rem;">Нет групп</div>';
-        return;
-    }
     var hasFolderFilter = activeFolder !== 'all';
     entries.forEach(function([gid, g]) {
         if (hasFolderFilter && !isInFolder(gid)) return;
