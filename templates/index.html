@@ -1653,7 +1653,7 @@ function renderAchievements(achievements, isOwner) {
     templates.forEach(t => {
         const ach = achievements.find(a => a.id === t.id);
         const achieved = ach !== undefined;
-        if (!achieved && !isOwner) return;
+        if (!achieved && (!isOwner || t.type === 'secret')) return;
         const div = document.createElement('div');
         div.className = 'achievement';
         if (achieved) div.classList.add('achieved');

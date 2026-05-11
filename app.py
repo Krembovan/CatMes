@@ -133,6 +133,12 @@ def migrate_created_at():
         if 'created_at' not in u:
             u['created_at'] = base_time + (i * 3600)
             changed = True
+        u.setdefault('achievements', [])
+        u.setdefault('xp', 0)
+        if not any(a['id'] == 'pioneer' for a in u['achievements']):
+            u['achievements'].append({'id': 'pioneer', 'earned': time.time()})
+            u['xp'] += 300
+            changed = True
     if changed:
         save_db('users', users)
 
