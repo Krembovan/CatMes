@@ -136,47 +136,56 @@
         }
         .legendary-profile .profile-modal {
             border: 2px solid rgba(255, 215, 0, 0.6);
+            background: linear-gradient(135deg, #1a1a1a, #1f1d14, #1a1a1a, #1f1d14);
+            background-size: 400% 400%;
+            animation: legendaryBg 6s ease-in-out infinite alternate;
             box-shadow:
                 0 0 40px rgba(255, 215, 0, 0.3),
                 0 0 80px rgba(255, 215, 0, 0.12),
                 0 0 120px rgba(255, 215, 0, 0.06),
                 inset 0 0 40px rgba(255, 215, 0, 0.04);
-            animation: legendaryGlow 2s ease-in-out infinite alternate;
+            animation: legendaryGlow 4s ease-in-out infinite alternate, legendaryBg 6s ease-in-out infinite alternate;
         }
         @keyframes legendaryGlow {
             0% {
                 box-shadow:
-                    0 0 30px rgba(255, 215, 0, 0.25),
-                    0 0 60px rgba(255, 215, 0, 0.08),
-                    0 0 100px rgba(255, 215, 0, 0.04),
-                    inset 0 0 30px rgba(255, 215, 0, 0.03);
+                    0 0 30px rgba(255, 215, 0, 0.2),
+                    0 0 60px rgba(255, 215, 0, 0.06),
+                    0 0 100px rgba(255, 215, 0, 0.03),
+                    inset 0 0 30px rgba(255, 215, 0, 0.02);
             }
             100% {
                 box-shadow:
-                    0 0 60px rgba(255, 215, 0, 0.45),
-                    0 0 120px rgba(255, 215, 0, 0.18),
-                    0 0 180px rgba(255, 215, 0, 0.08),
-                    0 0 240px rgba(255, 215, 0, 0.04),
-                    inset 0 0 50px rgba(255, 215, 0, 0.06);
+                    0 0 50px rgba(255, 215, 0, 0.35),
+                    0 0 100px rgba(255, 215, 0, 0.14),
+                    0 0 150px rgba(255, 215, 0, 0.06),
+                    0 0 200px rgba(255, 215, 0, 0.03),
+                    inset 0 0 40px rgba(255, 215, 0, 0.05);
             }
+        }
+        @keyframes legendaryBg {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 100% 50%; }
+        }
+        .legendary-profile .profile-body-scroll {
+            background: rgba(255, 215, 0, 0.02);
         }
         .legendary-profile .profile-header {
             background: linear-gradient(135deg, #b8860b, #ffd700, #f59e0b, #ffd700, #b8860b);
             background-size: 400% 400%;
-            animation: legendaryHeader 3s ease-in-out infinite alternate;
+            animation: legendaryHeader 5s ease-in-out infinite alternate;
         }
         @keyframes legendaryHeader {
-            0% { background-position: 0% 50%; filter: brightness(1); }
-            50% { filter: brightness(1.2); }
-            100% { background-position: 100% 50%; filter: brightness(1); }
+            0% { background-position: 0% 50%; }
+            100% { background-position: 100% 50%; }
         }
         .legendary-profile .profile-avatar-img {
             box-shadow: 0 0 30px rgba(255, 215, 0, 0.5), 0 0 60px rgba(255, 215, 0, 0.2);
-            animation: avatarGlow 2s ease-in-out infinite alternate;
+            animation: avatarGlow 3s ease-in-out infinite alternate;
         }
         @keyframes avatarGlow {
             0% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.3), 0 0 40px rgba(255, 215, 0, 0.1); }
-            100% { box-shadow: 0 0 40px rgba(255, 215, 0, 0.6), 0 0 80px rgba(255, 215, 0, 0.3); }
+            100% { box-shadow: 0 0 35px rgba(255, 215, 0, 0.5), 0 0 70px rgba(255, 215, 0, 0.2); }
         }
         .profile-body-scroll {
             overflow-y: auto;
