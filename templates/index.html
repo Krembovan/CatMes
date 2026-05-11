@@ -729,24 +729,27 @@ function handleRegister() {
 socket.on('auth_result', function(data) {
     if (data.success) {
         myData = data.user;
-        localStorage.setItem('cat_user', myData.username);
-        const pw = document.getElementById('loginPass').value || document.getElementById('regPass').value || savedPass || '';
-        if (pw) sessionStorage.setItem('cat_pass', pw);
         notifications = myData.notifications || [];
-        document.getElementById('authOverlay').classList.remove('active');
-        document.getElementById('mainApp').style.display = 'flex';
+        const isLogin = document.getElementById('authOverlay').classList.contains('active');
+        if (isLogin) {
+            localStorage.setItem('cat_user', myData.username);
+            const pw = document.getElementById('loginPass').value || document.getElementById('regPass').value || savedPass || '';
+            if (pw) sessionStorage.setItem('cat_pass', pw);
+            document.getElementById('authOverlay').classList.remove('active');
+            document.getElementById('mainApp').style.display = 'flex';
+            document.getElementById('messages').innerHTML = `
+                <div class="empty-chat">
+                    <div class="empty-chat-icon">🐱</div>
+                    <div style="font-size:1.2rem;font-weight:600;color:var(--text);">Добро пожаловать в CAT</div>
+                    <div style="font-size:0.85rem;color:var(--text-secondary);">Выберите чат или начните диалог</div>
+                </div>`;
+            document.getElementById('chatHeader').textContent = 'CAT';
+            currentRoom = null;
+        }
         updateMyInfo();
         updateBadge();
         updateFriendList();
-        updateRoomList();
-        document.getElementById('messages').innerHTML = `
-            <div class="empty-chat">
-                <div class="empty-chat-icon">🐱</div>
-                <div style="font-size:1.2rem;font-weight:600;color:var(--text);">Добро пожаловать в CAT</div>
-                <div style="font-size:0.85rem;color:var(--text-secondary);">Выберите чат или начните диалог</div>
-            </div>`;
-        document.getElementById('chatHeader').textContent = 'CAT';
-        currentRoom = null;
+        if (isLogin) updateRoomList();
     } else {
         if (document.getElementById('registerForm').style.display === 'block') {
             document.getElementById('regError').textContent = data.error;
@@ -868,6 +871,57 @@ function updateFriendList() {
         l.appendChild(empty);
     }
 }
+
+function openFriendModal() {
+    document.getElementById('searchUser').value = '@';
+    document.getElementById('friendError').textContent = '';
+    openModal('friendOverlay');
+}
+
+function sendFriendReq() {
+    const target = document.getElementById('searchUser').value.trim().replace('@', '');
+    const err = document.getElementById('friendError');
+    if (!target) { err.textContent = 'Введите имя'; return; }
+    if (!myData) { err.textContent = 'Ошибка авторизации'; return; }
+    socket.emit('send_friend_request', { my_username: myData.username, target_username: target });
+}
+
+function acceptFriend(u) {
+    if (!myData) return;
+    socket.emit('accept_friend', { my_username: myData.username, target_username: u });
+}
+
+function declineFriend(u) {
+    if (!myData) return;
+    socket.emit('decline_friend', { my_username: myData.username, target_username: u });
+}
+
+function removeFriend(u) {
+    if (!myData) return;
+    socket.emit('remove_friend', { my_username: myData.username, target_username: u });
+}
+
+socket.on('friend_msg', function(d) {
+    if (d.type === 'error') {
+        document.getElementById('friendError').textContent = d.text;
+    } else if (d.type === 'success' || d.type === 'info') {
+        document.getElementById('friendError').textContent = '';
+        closeModal('friendOverlay');
+        showToast(d.text, d.type === 'success' ? 'success' : 'info');
+    }
+});
+
+socket.on('incoming_friend_request', function() {
+    updateFriendList();
+});
+
+socket.on('friend_accepted_notify', function() {
+    updateFriendList();
+});
+
+socket.on('friend_removed_notify', function() {
+    updateFriendList();
+});
 
 socket.on('friend_online', function(d) {
     const s = document.getElementById('status_' + d.username);
