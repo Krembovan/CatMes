@@ -1558,8 +1558,7 @@ function saveProfile() {
     const bday = document.getElementById('profileBirthday').value;
     const newAvatar = document.getElementById('profileAvatar').getAttribute('data-new-avatar') || '';
     if (!n) { showToast('Имя обязательно', 'error'); return; }
-    const data = { username: myData.username, display_name: n, bio: b };
-    if (bday) data.birthday = bday;
+    const data = { username: myData.username, display_name: n, bio: b, birthday: bday };
     if (newAvatar) data.avatar = newAvatar;
     socket.emit('update_profile', data);
 }
@@ -1570,9 +1569,14 @@ socket.on('profile_updated', function(data) {
         return;
     }
     myData = data.user;
+    document.getElementById('profileAvatar').removeAttribute('data-new-avatar');
     updateMyInfo();
     showToast('Профиль обновлён!', 'success');
-    closeModal('profileOverlay');
+    isEditingProfile = false;
+    document.getElementById('profileModal').classList.remove('edit-mode');
+    const actions = document.querySelector('.profile-actions');
+    if (actions) actions.classList.remove('show');
+    updateProfileUI(myData, true);
 });
 
 function getLevel(xp) {
