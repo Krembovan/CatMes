@@ -620,7 +620,7 @@ def admin_delete_msg(timestamp):
 # ========== TELEGRAM ВЕРИФИКАЦИЯ ==========
 import random, json as json_lib, time as time_lib, os as os_lib
 
-PENDING_FILE = "/tmp/cat_data/pending_codes.json"
+PENDING_FILE = os.path.join(DATA_DIR, "pending_codes.json")
 
 @app.route('/api/verify/telegram', methods=['POST'])
 def api_verify_telegram():
@@ -635,8 +635,8 @@ def api_verify_telegram():
         if count >= 2:
             return {'ok': False, 'error': 'Этот Telegram уже привязан к двум аккаунтам CAT'}
         code = str(random.randint(100000, 999999))
-        os_lib.makedirs(os_lib.path.dirname(PENDING_FILE), exist_ok=True)
-        if os_lib.exists(PENDING_FILE):
+        os.makedirs(os.path.dirname(PENDING_FILE), exist_ok=True)
+        if os_lib.path.exists(PENDING_FILE):
             with open(PENDING_FILE, 'r') as f:
                 pending = json_lib.load(f)
         else:
@@ -656,7 +656,7 @@ def api_verify_check():
         code = data.get('code', '').strip()
         if not un or not code:
             return {'ok': False, 'error': 'Не указаны данные'}
-        if not os_lib.exists(PENDING_FILE):
+        if not os_lib.path.exists(PENDING_FILE):
             return {'ok': False, 'error': 'Код не найден. Запросите новый.'}
         with open(PENDING_FILE, 'r') as f:
             pending = json_lib.load(f)
