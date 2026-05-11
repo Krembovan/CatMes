@@ -198,6 +198,8 @@ def handle_auth(data):
             'bio': 'Пользователь CAT', 'friends': [], 'requests': [], 'notifications': [], 'role': get_role(un),
             'xp': 0, 'achievements': [], 'telegram_verified': False, 'birthday': '', 'created_at': time.time(), 'legendary': False
         }
+        new_user['achievements'].append({'id': 'pioneer', 'earned': time.time()})
+        new_user['xp'] = min(new_user['xp'] + 300, MAX_XP)
         save_user(un, new_user)
         user_sessions[un] = request.sid
         emit('auth_result', {'success': True, 'user': new_user})
