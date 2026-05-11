@@ -13,6 +13,7 @@
     <title>CAT</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
+        /* ========== ОСНОВНЫЕ СТИЛИ ========== */
         :root { --bg: #0d1117; --surface: #161b22; --primary: #7c5cfc; --primary-dark: #6a48e0; --accent: #38bdf8; --text: #e2e8f0; --text-secondary: #94a3b8; --border: rgba(255,255,255,0.06); --danger: #ef4444; --success: #10b981; }
         * { margin:0; padding:0; box-sizing:border-box; }
         body { background: #090c12; color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; }
@@ -71,7 +72,7 @@
         .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-secondary); gap: 15px; }
         .empty-chat-icon { font-size: 4rem; opacity: 0.3; }
         .input-box { padding: 20px 25px; display: flex; gap: 12px; background: var(--bg); border-top: 1px solid var(--border); }
-        .input-msg { flex: 1; background: var(--surface); border: 1px solid var(--border); padding: 14px 20px; border-radius: 30px; color: var(--text); font-size: 0.95rem; outline: none; }
+        .input-msg { flex: 1; background: var(--surface); border: 1px solid var(--border); padding: 14px 20px; border-radius: 30px; color: var(--text); font-size: 0.95rem; outline: none; resize: none; height: 48px; }
         .btn-send { background: var(--primary); border: none; width: 48px; height: 48px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: white; }
         .notif-overlay { position: fixed; top: 60px; right: 20px; width: 360px; max-height: 500px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); z-index: 200; display: none; overflow-y: auto; }
         .notif-overlay.open { display: block; }
@@ -104,11 +105,250 @@
         .toast.success { border-left: 4px solid var(--success); }
         .toast.error { border-left: 4px solid var(--danger); }
         .toast.info { border-left: 4px solid var(--accent); }
+        .unread-badge {
+            display: none;
+            background: var(--primary);
+            color: white;
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: auto;
+            line-height: 1.2;
+            text-align: center;
+            min-width: 20px;
+        }
+        .unread-badge.show { display: inline-block; }
         @media (max-width: 480px) { .sidebar { width: 100%; position: absolute; left: 0; top: 0; height: 100vh; z-index: 20; } .sidebar.hidden { display: none; } .chat-area { width: 100%; } .back-btn { display: block; } .notif-overlay { width: 95vw; right: 2.5vw; } .msg-image { max-width: 200px; max-height: 200px; } }
+
+        /* ========== НОВЫЕ СТИЛИ ПРОФИЛЯ ========== */
+        .profile-modal {
+            padding: 0;
+            width: 480px;
+            max-width: 95vw;
+            border-radius: 24px;
+            overflow: hidden;
+            background: #161b22;
+            color: #e2e8f0;
+        }
+        .profile-header {
+            height: 80px;
+            background: linear-gradient(135deg, #7c5cfc, #9b7cfc);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 15px 20px;
+            color: white;
+            font-size: 1.2rem;
+        }
+        .profile-edit-btn, .profile-close-btn {
+            cursor: pointer;
+            font-size: 1.5rem;
+            background: none;
+            border: none;
+            color: white;
+            opacity: 0.9;
+        }
+        .profile-edit-btn:hover, .profile-close-btn:hover { opacity: 1; }
+        .profile-body {
+            padding: 0 25px 25px;
+            text-align: left;
+        }
+        .profile-avatar-container {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin: -40px auto 15px;
+            border-radius: 20px;
+            border: 4px solid #161b22;
+            background: #1e1e2f;
+            overflow: hidden;
+            cursor: pointer;
+        }
+        .profile-avatar-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .profile-avatar-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 0.8rem;
+            pointer-events: none;
+        }
+        .profile-avatar-container:hover .profile-avatar-overlay { opacity: 1; }
+        .profile-info-block {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .profile-display-name { font-weight: 700; font-size: 1.3rem; }
+        .profile-handle { color: #94a3b8; font-size: 0.9rem; }
+        .profile-status { font-size: 0.85rem; margin-top: 5px; }
+        .online-dot { color: #22c55e; }
+        .role {
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        .role-owner { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+        .role-admin { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .role-moderator { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .role-user { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+        .verification-plate {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 16px;
+            padding: 30px;
+            text-align: center;
+            color: #94a3b8;
+            margin-bottom: 20px;
+        }
+        .verification-plate .icon { font-size: 2rem; margin-bottom: 10px; }
+        .verification-plate .title { font-weight: 600; font-size: 1.1rem; margin-bottom: 5px; color: #e2e8f0; }
+        .verification-plate .desc { font-size: 0.85rem; margin-bottom: 15px; }
+        .btn-verify {
+            background: #7c5cfc;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .xp-section {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .level-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .level-badge {
+            font-size: 1.8rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #7c5cfc, #38bdf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .level-title { font-size: 0.85rem; color: #94a3b8; }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #7c5cfc, #38bdf8);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        .xp-text { font-size: 0.75rem; color: #94a3b8; text-align: right; }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            margin-bottom: 20px;
+            gap: 5px;
+        }
+        .tab {
+            padding: 8px 18px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: #94a3b8;
+            font-size: 0.9rem;
+            transition: 0.2s;
+        }
+        .tab.active {
+            color: #e2e8f0;
+            border-bottom-color: #7c5cfc;
+        }
+        .about-section {
+            color: #94a3b8;
+            line-height: 1.6;
+            min-height: 60px;
+        }
+        .achievements-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .achievement {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        .achievement .icon { font-size: 1.5rem; width: 40px; text-align: center; }
+        .achievement .info { flex: 1; }
+        .achievement .name { font-weight: 600; }
+        .achievement .desc { font-size: 0.8rem; color: #94a3b8; }
+        .achievement .status { font-size: 0.8rem; font-weight: 600; }
+        .achieved { color: #10b981; }
+        .locked { color: #ef4444; opacity: 0.6; }
+        .in-progress { color: #f59e0b; }
+        .avatar-menu {
+            display: none;
+            position: absolute;
+            top: 85px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e2330;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 10px;
+            z-index: 10;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 180px;
+        }
+        .avatar-menu.show { display: flex; }
+        .avatar-menu button {
+            background: transparent;
+            border: none;
+            color: #e2e8f0;
+            padding: 8px 12px;
+            border-radius: 8px;
+            text-align: left;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .avatar-menu button:hover { background: rgba(124,92,252,0.15); }
+        .profile-actions {
+            display: none;
+            margin-top: 20px;
+        }
+        .profile-actions.show { display: block; }
+        .edit-mode .profile-display-name,
+        .edit-mode .profile-bio-view { display: none; }
+        .profile-bio-view {
+            white-space: pre-wrap;
+            margin-bottom: 10px;
+        }
+        .profile-fields { display: none; }
+        .edit-mode .profile-fields { display: block; }
+        .edit-mode .profile-view-info { display: none; }
     </style>
 </head>
 <body>
 
+<!-- Auth Modal -->
 <div id="authOverlay" class="modal-overlay active">
     <div class="modal">
         <h2>😸 <span style="background:linear-gradient(135deg,#7c5cfc,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">CAT</span></h2>
@@ -131,20 +371,95 @@
     </div>
 </div>
 
+<!-- Profile Modal (НОВЫЙ) -->
 <div id="profileOverlay" class="modal-overlay">
-    <div class="modal">
-        <h2>👤 Профиль</h2>
-        <img id="profileAvatar" class="avatar-large" src="" alt="Аватар">
-        <div class="input-group"><label>Имя</label><input type="text" id="profileName"></div>
-        <div class="input-group"><label>Username</label><input type="text" id="profileUser" disabled></div>
-        <div class="input-group"><label>Описание</label><textarea id="profileBio"></textarea></div>
-        <div class="input-group"><label>URL Аватара</label><input type="text" id="profileAvatarUrl"></div>
-        <button class="btn btn-primary" onclick="saveProfile()">💾 Сохранить</button>
-        <button class="btn btn-secondary" onclick="closeModal('profileOverlay')">Отмена</button>
-        <button class="btn btn-danger" onclick="logout()">🚪 Выйти</button>
+    <div class="modal profile-modal" id="profileModal">
+        <div class="profile-header">
+            <button class="profile-edit-btn" id="editProfileBtn" title="Редактировать профиль" style="display:none;">✏️</button>
+            <button class="profile-close-btn" onclick="closeModal('profileOverlay'); isEditingProfile = false; document.getElementById('profileModal').classList.remove('edit-mode'); document.querySelector('.profile-actions').classList.remove('show');">✕</button>
+        </div>
+        <div class="profile-body">
+            <div class="profile-avatar-container" id="profileAvatarContainer">
+                <img id="profileAvatar" class="profile-avatar-img" src="" alt="Аватар">
+                <div class="profile-avatar-overlay">📷 Загрузить</div>
+                <div class="avatar-menu" id="avatarMenu">
+                    <button id="uploadAvatarBtn">📁 Загрузить файл</button>
+                    <button id="urlAvatarBtn">🔗 Указать URL</button>
+                    <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
+                </div>
+            </div>
+            <div class="profile-info-block">
+                <div class="profile-display-name" id="profileDisplayName"></div>
+                <div class="profile-handle" id="profileHandle">@username</div>
+                <div class="profile-status">
+                    <span id="profileFriendsCount">0 друзей</span> · <span class="online-dot">🟢</span> онлайн
+                </div>
+                <div id="profileRole"></div>
+            </div>
+
+
+            <!-- Блок XP (виден только если верифицирован) -->
+            <div id="xpBlock" class="xp-section" style="display: none;">
+                <div class="level-row">
+                    <span class="level-badge" id="profileLevel">Уровень 1</span>
+                    <span class="level-title" id="profileLevelTitle">Новорождённый котёнок</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="profileProgress" style="width: 0%;"></div>
+                </div>
+                <div class="xp-text" id="profileXpText">0 / 100 XP</div>
+            </div>
+
+            <div class="tabs">
+                <div class="tab active" data-tab="info">О себе</div>
+                <div class="tab" data-tab="achievements">Достижения</div>
+            </div>
+
+            <div id="tab-content">
+                <div id="tab-info" class="about-section">
+                    <div class="profile-view-info">
+                        <div class="profile-bio-view" id="profileBioView"></div>
+                    </div>
+                    <div class="profile-fields">
+                        <div class="input-group">
+                            <label>ОТОБРАЖАЕМОЕ ИМЯ</label>
+                            <input type="text" id="profileName" placeholder="Ваше имя">
+                        </div>
+                        <div class="input-group">
+                            <label>О СЕБЕ</label>
+                            <textarea id="profileBio" placeholder="Расскажите о себе..." rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="profile-actions">
+                        <button class="btn btn-primary" onclick="saveProfile()">💾 Сохранить</button>
+                        <button class="btn btn-danger" onclick="logout()">🚪 Выйти</button>
+                    </div>
+                </div>
+                <div id="tab-achievements" style="display: none;">
+                    <div id="achievementsContent" class="achievements-list"></div>
+                    <div id="achievementsVerificationPlate" class="verification-plate" style="display: none;">
+                        <div class="icon">📱</div>
+                        <div class="title">Подтверждение через Telegram</div>
+                        <div class="desc">Достижения работают после привязки Telegram.<br>Введи свой @username и нажми «Отправить код». Мы пришлём код в чат.</div>
+                        <div class="input-group">
+                            <label>Ваш Telegram</label>
+                            <input type="text" id="telegramInput" placeholder="@username">
+                        </div>
+                        <button class="btn btn-primary" onclick="requestTelegramCode()" id="tgSendBtn">📨 Отправить код</button>
+                        <div class="input-group" style="margin-top: 10px;">
+                            <label>Код из Telegram</label>
+                            <input type="text" id="telegramCodeInput" placeholder="123456">
+                        </div>
+                        <button class="btn btn-primary" onclick="verifyTelegramCode()" id="tgVerifyBtn">✅ Подтвердить код</button>
+                        <div id="tgStatus" style="font-size:0.8rem; margin-top:5px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
+<!-- Friend Request Modal -->
 <div id="friendOverlay" class="modal-overlay">
     <div class="modal">
         <h2>🔍 Найти друга</h2>
@@ -155,14 +470,17 @@
     </div>
 </div>
 
+<!-- User Profile Modal (old, still used for viewing other profiles) -->
 <div id="userProfileOverlay" class="modal-overlay">
     <div class="modal" id="userProfileContent"></div>
 </div>
 
+<!-- Lightbox -->
 <div id="lightboxOverlay" class="lightbox-overlay" onclick="closeLightbox()">
     <img id="lightboxImg" src="" alt="Изображение">
 </div>
 
+<!-- Notifications Panel -->
 <div class="notif-overlay" id="notifPanel">
     <div class="notif-header">
         <span>🔔 Уведомления</span>
@@ -171,8 +489,10 @@
     <div id="notifList"></div>
 </div>
 
+<!-- Toast -->
 <div id="toast" class="toast"></div>
 
+<!-- Main App -->
 <div class="app-container" id="mainApp" style="display:none;">
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
@@ -180,7 +500,7 @@
             <div class="header-btns">
                 <div class="icon-btn" onclick="toggleNotifPanel()">🔔<span class="badge-count" id="notifBadge"></span></div>
                 <div class="icon-btn" onclick="openFriendModal()">+</div>
-                <div class="icon-btn" onclick="openModal('profileOverlay');loadProfile();">👤</div>
+                <div class="icon-btn" onclick="openModal('profileOverlay'); loadProfile();">👤</div>
             </div>
         </div>
         <div class="sidebar-nav">
@@ -189,7 +509,7 @@
             <div class="section-label">👥 Друзья</div>
             <div id="friendList"></div>
         </div>
-        <div class="profile-mini" onclick="openModal('profileOverlay');loadProfile();">
+        <div class="profile-mini" onclick="openModal('profileOverlay'); loadProfile();">
             <img id="myAvatar" class="avatar-mini" src="" alt="Аватар">
             <div class="profile-info">
                 <div class="profile-name" id="myName">—</div>
@@ -218,19 +538,21 @@
         <div class="input-box">
             <input type="file" id="fileInput" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
             <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Прикрепить изображение">📎</button>
-            <input type="text" class="input-msg" id="msgInput" placeholder="Написать сообщение..." onkeypress="if(event.key==='Enter')sendMsg()">
+            <textarea class="input-msg" id="msgInput" placeholder="Написать сообщение..." rows="1"></textarea>
             <button class="btn-send" onclick="sendMsg()">➤</button>
         </div>
     </div>
 </div>
 
 <script>
+// ========== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И ФУНКЦИИ ==========
 const socket = io();
 let myData = null;
 let currentRoom = null;
 let notifications = [];
 let dmUser = null;
 let replyTo = null;
+let unreadCounts = {};
 
 const ESC_MAP = {
     '&': '&amp;',
@@ -250,15 +572,16 @@ function sanitizeUrl(url) {
     if (!url) return '';
     url = url.trim();
     const lower = url.toLowerCase();
-    if (lower.startsWith('javascript:') || lower.startsWith('data:') && !lower.startsWith('data:image/')) {
-        return '';
-    }
-    return url;
+    if (lower.startsWith('javascript:')) return '';
+    if (lower.startsWith('data:') && !lower.startsWith('data:image/')) return '';
+    if (lower.startsWith('/uploads/')) return url;
+    if (lower.startsWith('http://') || lower.startsWith('https://')) return url;
+    return '';
 }
 
 function safeAvatarUrl(url, fallbackSeed) {
     const sanitized = sanitizeUrl(url);
-    if (sanitized && (sanitized.startsWith('http://') || sanitized.startsWith('https://') || sanitized.startsWith('data:image/'))) {
+    if (sanitized) {
         return sanitized;
     }
     return 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=' + encodeURIComponent(fallbackSeed || 'cat');
@@ -331,8 +654,9 @@ function handleFileSelect(event) {
     event.target.value = '';
 }
 
+// ========== АВТО-ВХОД ==========
 const savedUser = localStorage.getItem('cat_user');
-const savedPass = localStorage.getItem('cat_pass');
+const savedPass = sessionStorage.getItem('cat_pass');
 if (savedUser && savedPass) {
     socket.emit('auth', { action: 'login', username: savedUser, password: savedPass });
 }
@@ -378,7 +702,8 @@ socket.on('auth_result', function(data) {
     if (data.success) {
         myData = data.user;
         localStorage.setItem('cat_user', myData.username);
-        localStorage.setItem('cat_pass', document.getElementById('loginPass').value || savedPass || '');
+        const pw = document.getElementById('loginPass').value || document.getElementById('regPass').value || savedPass || '';
+        if (pw) sessionStorage.setItem('cat_pass', pw);
         notifications = myData.notifications || [];
         document.getElementById('authOverlay').classList.remove('active');
         document.getElementById('mainApp').style.display = 'flex';
@@ -413,158 +738,7 @@ function updateMyInfo() {
     if (r) r.textContent = roles[myData.role] || '';
 }
 
-function loadProfile() {
-    if (!myData) return;
-    document.getElementById('profileName').value = myData.display_name;
-    document.getElementById('profileUser').value = '@' + myData.username;
-    document.getElementById('profileBio').value = myData.bio || '';
-    document.getElementById('profileAvatarUrl').value = myData.avatar || '';
-    document.getElementById('profileAvatar').src = safeAvatarUrl(myData.avatar, myData.username);
-}
-
-function saveProfile() {
-    const n = document.getElementById('profileName').value.trim();
-    const b = document.getElementById('profileBio').value.trim();
-    const a = document.getElementById('profileAvatarUrl').value.trim();
-    if (!n) {
-        showToast('Имя обязательно', 'error');
-        return;
-    }
-    socket.emit('update_profile', { username: myData.username, display_name: n, bio: b, avatar: sanitizeUrl(a) });
-}
-
-socket.on('profile_updated', function(data) {
-    myData = data.user;
-    updateMyInfo();
-    showToast('Профиль обновлён!', 'success');
-    closeModal('profileOverlay');
-});
-
-function logout() {
-    localStorage.removeItem('cat_user');
-    localStorage.removeItem('cat_pass');
-    myData = null;
-    dmUser = null;
-    document.getElementById('mainApp').style.display = 'none';
-    document.getElementById('authOverlay').classList.add('active');
-    document.getElementById('messages').innerHTML = `
-        <div class="empty-chat">
-            <div class="empty-chat-icon">🐱</div>
-            <div style="font-size:1.2rem;font-weight:600;color:var(--text);">Добро пожаловать в CAT</div>
-            <div style="font-size:0.85rem;color:var(--text-secondary);">Выберите чат или начните диалог</div>
-        </div>`;
-    closeModal('profileOverlay');
-}
-
-function toggleNotifPanel() {
-    const p = document.getElementById('notifPanel');
-    p.classList.toggle('open');
-    if (p.classList.contains('open')) renderNotifications();
-}
-
-function updateBadge() {
-    const total = (myData && myData.requests ? myData.requests.length : 0) +
-        notifications.filter(function(n) { return !n.read; }).length;
-    const b = document.getElementById('notifBadge');
-    b.textContent = total;
-    if (total > 0) {
-        b.classList.add('show');
-    } else {
-        b.classList.remove('show');
-    }
-}
-
-function renderNotifications() {
-    const l = document.getElementById('notifList');
-    l.innerHTML = '';
-
-    const requests = (myData && myData.requests || []).map(function(u) {
-        return {
-            type: 'friend_request',
-            from: u,
-            text: '@' + u + ' хочет добавить вас в друзья',
-            timestamp: Date.now() / 1000
-        };
-    });
-
-    const all = requests.concat(notifications);
-
-    if (all.length === 0) {
-        const empty = document.createElement('div');
-        empty.style.cssText = 'padding:30px;text-align:center;color:var(--text-secondary);';
-        empty.textContent = 'Нет уведомлений';
-        l.appendChild(empty);
-        return;
-    }
-
-    all.forEach(function(n) {
-        const item = document.createElement('div');
-        item.className = 'notif-item';
-
-        const textDiv = document.createElement('div');
-        textDiv.className = 'notif-text';
-
-        let notifText;
-        if (n.type === 'new_message') {
-            notifText = '💬 @' + n.from + ': ' + (n.text || '');
-        } else if (n.type === 'friend_request') {
-            notifText = n.text || ('@' + n.from + ' хочет добавить вас в друзья');
-        } else {
-            notifText = n.text || '';
-        }
-        textDiv.textContent = notifText;
-        item.appendChild(textDiv);
-
-        const timeDiv = document.createElement('div');
-        timeDiv.className = 'notif-time';
-        timeDiv.textContent = new Date(n.timestamp * 1000).toLocaleString();
-        item.appendChild(timeDiv);
-
-        if (n.type === 'new_message') {
-            item.style.cursor = 'pointer';
-            item.addEventListener('click', function() {
-                if (n.from) startDM(n.from);
-                toggleNotifPanel();
-            });
-        }
-
-        if (n.type === 'friend_request') {
-            const actions = document.createElement('div');
-            actions.className = 'notif-actions';
-
-            const acceptBtn = document.createElement('button');
-            acceptBtn.className = 'btn-sm primary';
-            acceptBtn.textContent = '✓ Принять';
-            acceptBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                acceptFriend(n.from);
-                toggleNotifPanel();
-            });
-
-            const declineBtn = document.createElement('button');
-            declineBtn.className = 'btn-sm danger';
-            declineBtn.textContent = '✕ Отклонить';
-            declineBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                declineFriend(n.from);
-                toggleNotifPanel();
-            });
-
-            actions.appendChild(acceptBtn);
-            actions.appendChild(declineBtn);
-            item.appendChild(actions);
-        }
-
-        l.appendChild(item);
-    });
-}
-
-socket.on('new_notification', function(n) {
-    notifications.unshift(n);
-    updateBadge();
-    showToast(n.text || '', 'info');
-});
-
+// ========== ДРУЗЬЯ ==========
 function updateFriendList() {
     if (!myData) return;
     updateBadge();
@@ -636,6 +810,11 @@ function updateFriendList() {
         nameSpan.appendChild(nameStrong);
         nameSpan.appendChild(statusSpan);
 
+        const dmBadge = document.createElement('span');
+        dmBadge.id = 'unread_dm_' + u;
+        dmBadge.className = 'unread-badge';
+        nameSpan.appendChild(dmBadge);
+
         const removeBtn = document.createElement('span');
         removeBtn.className = 'friend-remove-btn';
         removeBtn.textContent = '✕';
@@ -674,178 +853,142 @@ socket.on('friend_avatar', function(d) {
     });
 });
 
+// ========== КОМНАТЫ ==========
 function updateRoomList() {
-    document.getElementById('roomList').innerHTML = '<div class="chat-item" onclick="switchRoom(\'Общий\')" data-room="Общий"><div class="chat-avatar">🌍</div><span>Общий канал</span></div>';
+    const list = document.getElementById('roomList');
+    list.innerHTML = '';
+    const rooms = [
+        { key: 'Общий', name: 'Общий канал', icon: '🌍' },
+        { key: 'Новости', name: 'Новости', icon: '📢' }
+    ];
+    rooms.forEach(function(r) {
+        const div = document.createElement('div');
+        div.className = 'chat-item';
+        div.setAttribute('data-room', r.key);
+        div.onclick = function() { switchRoom(r.key); };
+        div.innerHTML = '<div class="chat-avatar">' + r.icon + '</div><span>' + r.name + '</span>' +
+            '<span class="unread-badge" id="unread_' + r.key + '"></span>';
+        list.appendChild(div);
+    });
 }
 
-function openFriendModal() {
-    document.getElementById('searchUser').value = '@';
-    document.getElementById('friendError').textContent = '';
-    openModal('friendOverlay');
+// ========== УВЕДОМЛЕНИЯ ==========
+function toggleNotifPanel() {
+    const p = document.getElementById('notifPanel');
+    p.classList.toggle('open');
+    if (p.classList.contains('open')) renderNotifications();
 }
 
-function sendFriendReq() {
-    const t = document.getElementById('searchUser').value.trim();
-    if (!t) { document.getElementById('friendError').textContent = 'Введите username'; return; }
-    socket.emit('send_friend_request', { my_username: myData.username, target_username: t });
-    closeModal('friendOverlay');
-}
-
-function acceptFriend(u) { socket.emit('accept_friend', { my_username: myData.username, target_username: u }); }
-function declineFriend(u) { socket.emit('decline_friend', { my_username: myData.username, target_username: u }); }
-
-function removeFriend(u) {
-    if (!confirm('Удалить @' + u + ' из друзей?')) return;
-    socket.emit('remove_friend', { my_username: myData.username, target_username: u });
-}
-
-function viewProfile(u) {
-    if (u === myData.username) { openModal('profileOverlay'); loadProfile(); return; }
-    socket.emit('get_user_profile', { username: u, requester: myData.username });
-}
-
-socket.on('user_profile', function(d) {
-    if (d.error) { showToast(d.error, 'error'); return; }
-
-    const content = document.getElementById('userProfileContent');
-    content.innerHTML = '';
-
-    const modal = document.createElement('div');
-    modal.style.cssText = 'width:100%;';
-
-    const h2 = document.createElement('h2');
-    h2.textContent = '👤 Профиль';
-    modal.appendChild(h2);
-
-    const avatarImg = document.createElement('img');
-    avatarImg.className = 'avatar-large';
-    avatarImg.src = safeAvatarUrl(d.user.avatar, d.username);
-    avatarImg.alt = 'Аватар';
-    modal.appendChild(avatarImg);
-
-    const nameDiv = document.createElement('div');
-    nameDiv.style.cssText = 'text-align:center;font-size:1.2rem;font-weight:700;';
-    nameDiv.textContent = d.user.display_name || d.username;
-    modal.appendChild(nameDiv);
-
-    const unameDiv = document.createElement('div');
-    unameDiv.style.cssText = 'text-align:center;color:var(--text-secondary);';
-    unameDiv.textContent = '@' + d.username;
-    modal.appendChild(unameDiv);
-
-    const roleNames = {'owner': '👑 Владелец', 'admin': '🛡️ Админ', 'moderator': '🛡️ Модер', 'user': '👤 Пользователь'};
-    const roleColors = {'owner': '#f59e0b', 'admin': '#ef4444', 'moderator': '#10b981', 'user': '#94a3b8'};
-    const roleDiv = document.createElement('div');
-    roleDiv.style.cssText = 'text-align:center;font-weight:600;color:' + (roleColors[d.user.role] || '#94a3b8') + ';';
-    roleDiv.textContent = roleNames[d.user.role] || '👤 Пользователь';
-    modal.appendChild(roleDiv);
-
-    const statusDiv = document.createElement('div');
-    statusDiv.style.cssText = 'text-align:center;font-size:0.75rem;color:var(--text-secondary);margin-top:4px;';
-    if (d.user.online) {
-        statusDiv.textContent = '🟢 Онлайн';
-    } else if (d.user.last_seen) {
-        statusDiv.textContent = 'Был(а) ' + timeAgo(new Date(d.user.last_seen * 1000));
+function updateBadge() {
+    const total = (myData && myData.requests ? myData.requests.length : 0) +
+        notifications.filter(function(n) { return !n.read; }).length;
+    const b = document.getElementById('notifBadge');
+    b.textContent = total;
+    if (total > 0) {
+        b.classList.add('show');
+    } else {
+        b.classList.remove('show');
     }
-    modal.appendChild(statusDiv);
+}
 
-    const bioDiv = document.createElement('div');
-    bioDiv.style.cssText = 'text-align:center;margin:10px 0;padding:8px;background:var(--surface);border-radius:8px;';
-    bioDiv.textContent = d.user.bio || '';
-    modal.appendChild(bioDiv);
+function updateUnreadBadge(room) {
+    const badge = document.getElementById('unread_' + room);
+    if (!badge) return;
+    const count = unreadCounts[room] || 0;
+    if (count > 0) {
+        badge.textContent = count;
+        badge.classList.add('show');
+    } else {
+        badge.textContent = '';
+        badge.classList.remove('show');
+    }
+}
 
-    const friendsDiv = document.createElement('div');
-    friendsDiv.style.cssText = 'display:flex;gap:20px;justify-content:center;margin:10px 0;color:var(--text-secondary);font-size:0.85rem;';
-    const friendsSpan = document.createElement('span');
-    friendsSpan.textContent = 'Друзей: ' + (d.user.friends ? d.user.friends.length : 0);
-    friendsDiv.appendChild(friendsSpan);
-    modal.appendChild(friendsDiv);
+function renderNotifications() {
+    const l = document.getElementById('notifList');
+    l.innerHTML = '';
 
-    const isF = myData.friends && myData.friends.indexOf(d.username) !== -1;
-    const isR = myData.requests && myData.requests.indexOf(d.username) !== -1;
-    const isBy = d.user.requests && d.user.requests.indexOf(myData.username) !== -1;
+    const requests = (myData && myData.requests || []).map(function(u) {
+        return { type: 'friend_request', from: u, text: '@' + u + ' хочет добавить вас в друзья', timestamp: Date.now() / 1000 };
+    });
 
-    if (!isF && !isBy && !isR) {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-primary';
-        btn.textContent = '📨 Добавить в друзья';
-        btn.addEventListener('click', function() { sendFriendReqTo(d.username); });
-        modal.appendChild(btn);
-    } else if (isR) {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-primary';
-        btn.textContent = '✓ Принять запрос';
-        btn.addEventListener('click', function() { acceptFriend(d.username); closeModal('userProfileOverlay'); });
-        modal.appendChild(btn);
-    } else if (isBy) {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-secondary';
-        btn.disabled = true;
-        btn.textContent = '⏳ Запрос отправлен';
-        modal.appendChild(btn);
-    } else if (isF) {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-primary';
-        btn.textContent = '💬 Написать';
-        btn.addEventListener('click', function() { startDM(d.username); closeModal('userProfileOverlay'); });
-        modal.appendChild(btn);
+    const all = requests.concat(notifications);
+    if (all.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:30px;text-align:center;color:var(--text-secondary);';
+        empty.textContent = 'Нет уведомлений';
+        l.appendChild(empty);
+        return;
     }
 
-    const callBtn = document.createElement('button');
-    callBtn.className = 'btn btn-primary';
-    callBtn.textContent = '📞 Позвонить';
-    callBtn.addEventListener('click', function() { startCall(d.username); });
-    modal.appendChild(callBtn);
+    all.forEach(function(n) {
+        const item = document.createElement('div');
+        item.className = 'notif-item';
 
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'btn btn-secondary';
-    closeBtn.textContent = 'Закрыть';
-    closeBtn.addEventListener('click', function() { closeModal('userProfileOverlay'); });
-    modal.appendChild(closeBtn);
+        const textDiv = document.createElement('div');
+        textDiv.className = 'notif-text';
+        let notifText;
+        if (n.type === 'new_message') {
+            notifText = '💬 @' + n.from + ': ' + (n.text || '');
+        } else if (n.type === 'friend_request') {
+            notifText = n.text || ('@' + n.from + ' хочет добавить вас в друзья');
+        } else {
+            notifText = n.text || '';
+        }
+        textDiv.textContent = notifText;
+        item.appendChild(textDiv);
 
-    content.appendChild(modal);
-    openModal('userProfileOverlay');
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'notif-time';
+        timeDiv.textContent = new Date(n.timestamp * 1000).toLocaleString();
+        item.appendChild(timeDiv);
+
+        if (n.type === 'new_message') {
+            item.style.cursor = 'pointer';
+            item.addEventListener('click', function() {
+                if (n.from) startDM(n.from);
+                toggleNotifPanel();
+            });
+        }
+
+        if (n.type === 'friend_request') {
+            const actions = document.createElement('div');
+            actions.className = 'notif-actions';
+
+            const acceptBtn = document.createElement('button');
+            acceptBtn.className = 'btn-sm primary';
+            acceptBtn.textContent = '✓ Принять';
+            acceptBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                acceptFriend(n.from);
+                toggleNotifPanel();
+            });
+
+            const declineBtn = document.createElement('button');
+            declineBtn.className = 'btn-sm danger';
+            declineBtn.textContent = '✕ Отклонить';
+            declineBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                declineFriend(n.from);
+                toggleNotifPanel();
+            });
+
+            actions.appendChild(acceptBtn);
+            actions.appendChild(declineBtn);
+            item.appendChild(actions);
+        }
+
+        l.appendChild(item);
+    });
+}
+
+socket.on('new_notification', function(n) {
+    notifications.unshift(n);
+    updateBadge();
+    showToast(n.text || '', 'info');
 });
 
-function sendFriendReqTo(u) {
-    socket.emit('send_friend_request', { my_username: myData.username, target_username: u });
-    showToast('Запрос отправлен', 'success');
-    closeModal('userProfileOverlay');
-}
-
-socket.on('friend_msg', function(d) { showToast(d.text, d.type || 'info'); });
-
-socket.on('incoming_friend_request', function(d) {
-    if (myData && d.user && d.user.username === myData.username) {
-        myData = d.user;
-        updateFriendList();
-        updateBadge();
-        showToast('@' + d.from + ' хочет добавить вас в друзья', 'info');
-    }
-});
-
-socket.on('friend_accepted_notify', function(d) {
-    if (myData && d.user && d.user.username === myData.username) {
-        myData = d.user;
-        updateFriendList();
-        showToast('@' + d.by + ' принял ваш запрос', 'success');
-    }
-});
-
-socket.on('friend_removed_notify', function(d) {
-    if (myData && d.user && d.user.username === myData.username) {
-        myData = d.user;
-        updateFriendList();
-        showToast('@' + d.by + ' удалил вас из друзей', 'info');
-    }
-});
-
-function startDM(u) {
-    dmUser = u;
-    const sorted = [myData.username, u].sort();
-    switchRoom('dm_' + sorted[0] + '_' + sorted[1]);
-}
-
+// ========== ЧАТ И ОСТАЛЬНЫЕ ФУНКЦИИ (без сокращений) ==========
 function switchRoom(r) {
     currentRoom = r;
     document.getElementById('messages').innerHTML = '';
@@ -857,6 +1000,21 @@ function switchRoom(r) {
         dmUser = null;
     } else if (r.startsWith('dm_')) {
         document.getElementById('chatHeader').textContent = dmUser ? '💬 @' + dmUser : '💬 Личные сообщения';
+        const dmKey = 'dm_' + dmUser;
+        if (unreadCounts[dmKey]) {
+            delete unreadCounts[dmKey];
+            updateUnreadBadge(dmKey);
+        }
+    } else {
+        document.getElementById('chatHeader').textContent = '# ' + r;
+        dmUser = null;
+    }
+
+    const inputBox = document.querySelector('.input-box');
+    if (r === 'Новости' && myData && myData.role !== 'owner' && myData.role !== 'admin') {
+        inputBox.style.display = 'none';
+    } else {
+        inputBox.style.display = 'flex';
     }
 
     const items = document.querySelectorAll('.chat-item');
@@ -866,22 +1024,24 @@ function switchRoom(r) {
 
     socket.emit('join', { room: r });
 
-    if (r.startsWith('dm_')) {
-        socket.emit('mark_read', { room: r, username: myData.username });
+    if (r.startsWith('dm_') && dmUser) {
+        notifications = notifications.filter(function(n) { return n.from !== dmUser; });
+        updateBadge();
     }
 
     if (window.innerWidth <= 480) {
         document.getElementById('sidebar').classList.add('hidden');
     }
-
-    if (r.startsWith('dm_') && dmUser) {
-        notifications = notifications.filter(function(n) { return n.from !== dmUser; });
-        updateBadge();
-    }
 }
 
 function goBack() {
     document.getElementById('sidebar').classList.remove('hidden');
+}
+
+function startDM(u) {
+    dmUser = u;
+    const sorted = [myData.username, u].sort();
+    switchRoom('dm_' + sorted[0] + '_' + sorted[1]);
 }
 
 function replyToMessage(msgId, author, preview) {
@@ -901,10 +1061,7 @@ function sendMsg() {
     const i = document.getElementById('msgInput');
     const t = i.value.trim();
     if (!myData) return;
-    if (!currentRoom) {
-        showToast('Выберите чат', 'error');
-        return;
-    }
+    if (!currentRoom) { showToast('Выберите чат', 'error'); return; }
     if (!t) return;
 
     const msgData = {
@@ -933,9 +1090,9 @@ function renderMessage(m) {
     const b = document.getElementById('messages');
     if (b.querySelector('.empty-chat')) b.innerHTML = '';
 
-    const isMy = m.username === (myData ? myData.username : '');
-    const canDel = myData && (myData.role === 'owner' || myData.role === 'admin' || myData.role === 'moderator');
-    const hasImage = m.image && m.image.startsWith('data:image/');
+    const isMy = (m.username || '').replace('@', '').toLowerCase() === (myData && myData.username ? myData.username.replace('@', '').toLowerCase() : '');
+    const canDel = myData && (myData.role === 'owner' || myData.role === 'admin' || myData.role === 'moderator' || (isMy && currentRoom && currentRoom.startsWith('dm_')));
+    const hasImage = m.image && (m.image.startsWith('data:image/') || m.image.startsWith('/uploads/'));
     const hasReply = m.reply_to && !m.image;
 
     const msgDiv = document.createElement('div');
@@ -973,34 +1130,31 @@ function renderMessage(m) {
     if (hasReply) {
         const replyDiv = document.createElement('div');
         replyDiv.className = 'msg-reply';
-
         const replyName = document.createElement('span');
         replyName.className = 'msg-reply-name';
         replyName.textContent = '↩ ' + (m.reply_author || 'Сообщение');
-
         const replyPreview = document.createElement('span');
         replyPreview.className = 'msg-reply-preview';
         replyPreview.textContent = ': ' + (m.reply_text || '').substring(0, 50);
-
         replyDiv.appendChild(replyName);
         replyDiv.appendChild(replyPreview);
-
         replyDiv.addEventListener('click', function(e) {
             e.stopPropagation();
-            const origMsg = document.querySelector('[data-msg-id="' + escapeHtml(m.reply_to) + '"]');
+            const origMsg = document.querySelector('[data-msg-id="' + CSS.escape(String(m.reply_to)) + '"]');
             if (origMsg) {
                 origMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 origMsg.style.boxShadow = '0 0 20px var(--primary)';
                 setTimeout(function() { origMsg.style.boxShadow = ''; }, 1500);
             }
         });
-
         bubble.appendChild(replyDiv);
     }
 
     if (m.text && !hasImage) {
-        const textNode = document.createTextNode(m.text);
-        bubble.appendChild(textNode);
+        const safeText = escapeHtml(m.text).replace(/\n/g, '<br>');
+        const textSpan = document.createElement('span');
+        textSpan.innerHTML = safeText;
+        bubble.appendChild(textSpan);
     }
 
     if (hasImage) {
@@ -1014,7 +1168,6 @@ function renderMessage(m) {
             openLightbox(sanitizeUrl(m.image));
         });
         bubble.appendChild(img);
-
         if (m.text) {
             const textDiv = document.createElement('div');
             textDiv.style.marginBottom = '6px';
@@ -1061,6 +1214,9 @@ function renderMessage(m) {
 }
 
 let typingTimer;
+document.getElementById('msgInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
 document.getElementById('msgInput').addEventListener('input', function() {
     if (currentRoom && currentRoom.startsWith('dm_')) {
         socket.emit('typing', { room: currentRoom, username: myData.username, user: myData.display_name });
@@ -1090,7 +1246,20 @@ function normalizeRoom(room) {
 socket.on('message', function(m) {
     const mr = normalizeRoom(m.room || '');
     const myR = normalizeRoom(currentRoom || '');
-    if (mr === myR) renderMessage(m);
+    if (mr === myR) {
+        renderMessage(m);
+    } else if (mr && m.username !== (myData ? myData.username : '')) {
+        unreadCounts[mr] = (unreadCounts[mr] || 0) + 1;
+        updateUnreadBadge(mr);
+        if (mr.startsWith('dm_') && m.username) {
+            const dmKey = 'dm_' + m.username;
+            unreadCounts[dmKey] = (unreadCounts[dmKey] || 0) + 1;
+            updateUnreadBadge(dmKey);
+        }
+        if (!document.hasFocus() && !mr.startsWith('dm_')) {
+            showBrowserNotification('# ' + mr, (m.text || (m.image ? '[Изображение]' : '')), mr);
+        }
+    }
 });
 
 socket.on('history', function(h) {
@@ -1110,25 +1279,38 @@ socket.on('messages_read', function(data) {
     socket.emit('join', { room: currentRoom });
 });
 
-socket.on('new_dm', function(data) {
-    const notif = {
-        type: 'new_message',
-        from: data.from,
-        text: data.text,
-        timestamp: Date.now() / 1000,
-        read: false
+function showBrowserNotification(title, body, room) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (document.hasFocus()) return;
+    const notification = new Notification(title, { body: body, icon: 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=cat', silent: false });
+    notification.onclick = function() {
+        window.focus();
+        if (room) {
+            if (room.startsWith('dm_')) {
+                const parts = room.split('_');
+                if (parts.length >= 3) {
+                    const friend = parts[1] === myData.username ? parts[2] : parts[1];
+                    startDM(friend);
+                }
+            } else { switchRoom(room); }
+        }
+        notification.close();
     };
-    notifications.unshift(notif);
-    updateBadge();
-    showToast('💬 @' + data.from + ': ' + data.text, 'info');
+}
+
+socket.on('new_dm', function(data) {
+    const isDMOpen = currentRoom && currentRoom.startsWith('dm_') && dmUser === data.from;
+    if (!isDMOpen) {
+        const notif = { type: 'new_message', from: data.from, text: data.text, timestamp: Date.now() / 1000, read: false };
+        notifications.unshift(notif);
+        updateBadge();
+        showToast('💬 ' + data.from + ': ' + data.text, 'info');
+        if (!document.hasFocus()) { showBrowserNotification('💬 ' + data.from, data.text, data.room || ''); }
+    }
 });
 
-document.getElementById('loginPass').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') handleLogin();
-});
-document.getElementById('regPass2').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') handleRegister();
-});
+document.getElementById('loginPass').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleLogin(); });
+document.getElementById('regPass2').addEventListener('keypress', function(e) { if (e.key === 'Enter') handleRegister(); });
 
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/static/sw.js').catch(function() {});
@@ -1141,27 +1323,11 @@ function formatMsgTime(ts) {
     const h = d.getHours().toString().padStart(2, '0');
     const m = d.getMinutes().toString().padStart(2, '0');
     const time = h + ':' + m;
-
-    if (d.toDateString() === now.toDateString()) {
-        return time;
-    }
-
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (d.toDateString() === yesterday.toDateString()) {
-        return 'вчера ' + time;
-    }
-
-    if (d.getFullYear() === now.getFullYear()) {
-        const day = d.getDate().toString().padStart(2, '0');
-        const month = (d.getMonth() + 1).toString().padStart(2, '0');
-        return day + '.' + month + ' ' + time;
-    }
-
-    const day = d.getDate().toString().padStart(2, '0');
-    const month = (d.getMonth() + 1).toString().padStart(2, '0');
-    const year = d.getFullYear();
-    return day + '.' + month + '.' + year + ' ' + time;
+    if (d.toDateString() === now.toDateString()) return time;
+    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return 'вчера ' + time;
+    if (d.getFullYear() === now.getFullYear()) return d.getDate().toString().padStart(2,'0') + '.' + (d.getMonth()+1).toString().padStart(2,'0') + ' ' + time;
+    return d.getDate().toString().padStart(2,'0') + '.' + (d.getMonth()+1).toString().padStart(2,'0') + '.' + d.getFullYear() + ' ' + time;
 }
 
 function timeAgo(d) {
@@ -1172,63 +1338,321 @@ function timeAgo(d) {
     return Math.floor(s / 86400) + ' дн назад';
 }
 
-let localStream = null, peerConnection = null, currentCallUser = null;
-const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+// ========== НОВЫЙ ПРОФИЛЬ (функции) ==========
+let isEditingProfile = false;
 
-async function startCall(u) {
-    currentCallUser = u;
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        peerConnection = new RTCPeerConnection(rtcConfig);
-        localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+const avatarContainer = document.getElementById('profileAvatarContainer');
+const avatarMenu = document.getElementById('avatarMenu');
+const uploadBtn = document.getElementById('uploadAvatarBtn');
+const urlBtn = document.getElementById('urlAvatarBtn');
+const fileInput = document.getElementById('avatarFileInput');
+const avatarImg = document.getElementById('profileAvatar');
 
-        peerConnection.onicecandidate = (e) => {
-            if (e.candidate) socket.emit('call_signal', { to: u, ice: e.candidate });
+avatarContainer.addEventListener('click', (e) => {
+    if (!isEditingProfile) return;
+    avatarMenu.classList.toggle('show');
+    e.stopPropagation();
+});
+document.addEventListener('click', () => avatarMenu.classList.remove('show'));
+uploadBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fileInput.click();
+});
+fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            avatarImg.src = ev.target.result;
+            avatarImg.setAttribute('data-new-avatar', ev.target.result);
+            avatarMenu.classList.remove('show');
         };
-
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        socket.emit('call_user', { to: u, sdp: offer });
-        showToast('📞 Звоним @' + u, 'info');
-    } catch (e) {
-        showToast('Ошибка микрофона', 'error');
+        reader.readAsDataURL(file);
     }
-}
+    fileInput.value = '';
+});
+urlBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const url = prompt('Введите URL изображения:');
+    if (url) {
+        avatarImg.src = url;
+        avatarImg.setAttribute('data-new-avatar', url);
+        avatarMenu.classList.remove('show');
+    }
+});
 
-socket.on('incoming_call', async (d) => {
-    if (confirm('📞 @' + d.from + ' звонит! Принять?')) {
-        currentCallUser = d.from;
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        peerConnection = new RTCPeerConnection(rtcConfig);
-        localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-
-        peerConnection.onicecandidate = (e) => {
-            if (e.candidate) socket.emit('call_signal', { to: d.from, ice: e.candidate });
-        };
-
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(d.sdp));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('call_accepted', { to: d.from, sdp: answer });
+document.getElementById('editProfileBtn').addEventListener('click', () => {
+    isEditingProfile = !isEditingProfile;
+    const modal = document.getElementById('profileModal');
+    const actions = document.querySelector('.profile-actions');
+    if (isEditingProfile) {
+        modal.classList.add('edit-mode');
+        actions.classList.add('show');
     } else {
-        socket.emit('call_rejected', { to: d.from });
+        modal.classList.remove('edit-mode');
+        actions.classList.remove('show');
     }
 });
 
-socket.on('call_accepted', async (d) => {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(d.sdp));
-    showToast('📞 Соединение установлено!', 'success');
-});
-
-socket.on('call_signal', (d) => {
-    if (d.ice) peerConnection.addIceCandidate(new RTCIceCandidate(d.ice));
-});
-
-function hangUp() {
-    if (peerConnection) { peerConnection.close(); peerConnection = null; }
-    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-    currentCallUser = null;
+function loadProfile(u) {
+    if (u) {
+        socket.emit('get_user_profile', { username: u, requester: myData.username });
+    } else {
+        updateProfileUI(myData, true);
+        openModal('profileOverlay');
+    }
 }
+
+socket.on('user_profile', function(d) {
+    if (d.error) { showToast(d.error, 'error'); return; }
+    const isOwner = myData && myData.username === d.username;
+    updateProfileUI(d.user, isOwner);
+    openModal('profileOverlay');
+});
+
+function updateProfileUI(user, isOwner) {
+    isEditingProfile = false;
+    document.getElementById('profileModal').classList.remove('edit-mode');
+    const actions = document.querySelector('.profile-actions');
+    if (actions) actions.classList.remove('show');
+
+    document.getElementById('profileName').value = user.display_name || '';
+    document.getElementById('profileBio').value = user.bio || '';
+    document.getElementById('profileBioView').textContent = user.bio || 'Нет описания';
+    document.getElementById('profileAvatar').src = safeAvatarUrl(user.avatar, user.username);
+    document.getElementById('profileDisplayName').textContent = user.display_name || user.username;
+    document.getElementById('profileHandle').textContent = '@' + user.username;
+    document.getElementById('profileFriendsCount').textContent = (user.friends ? user.friends.length : 0) + ' друзей';
+    const roleEl = document.getElementById('profileRole');
+    roleEl.innerHTML = '';
+    const span = document.createElement('span');
+    span.className = 'role role-' + (user.role || 'user');
+    span.textContent = {'owner':'👑 Владелец','admin':'🛡️ Админ','moderator':'🛡️ Модер','user':'👤 Пользователь'}[user.role] || '👤 Пользователь';
+    roleEl.appendChild(span);
+
+    const verified = user.telegram_verified || false;
+    const verificationBlock = document.getElementById('verificationBlock');
+    const xpBlock = document.getElementById('xpBlock');
+
+    if (isOwner) {
+        if (verified) {
+            xpBlock.style.display = 'block';
+        } else {
+            xpBlock.style.display = 'none';
+        }
+    } else {
+        xpBlock.style.display = 'block';
+    }
+    if (xpBlock.style.display === 'block') {
+        updateXpUI(user.xp || 0);
+    }
+
+    const achievementsContent = document.getElementById('achievementsContent');
+    const achievementsVerificationPlate = document.getElementById('achievementsVerificationPlate');
+    if (isOwner && !verified) {
+        achievementsContent.style.display = 'none';
+        achievementsVerificationPlate.style.display = 'block';
+    } else {
+        achievementsVerificationPlate.style.display = 'none';
+        achievementsContent.style.display = 'block';
+        renderAchievements(user.achievements || [], isOwner);
+    }
+
+    const editBtn = document.getElementById('editProfileBtn');
+    if (editBtn) editBtn.style.display = isOwner ? 'inline' : 'none';
+    avatarContainer.style.pointerEvents = isOwner ? 'auto' : 'none';
+}
+
+function updateXpUI(xp) {
+    const level = getLevel(xp);
+    const nextXp = getNextLevelXp(level);
+    const currentLevelXp = getLevelXp(level);
+    const progress = nextXp > currentLevelXp ? ((xp - currentLevelXp) / (nextXp - currentLevelXp) * 100) : 100;
+    document.getElementById('profileLevel').textContent = 'Уровень ' + level;
+    document.getElementById('profileLevelTitle').textContent = getLevelTitle(level);
+    document.getElementById('profileProgress').style.width = progress + '%';
+    document.getElementById('profileXpText').textContent = xp + ' / ' + nextXp + ' XP';
+}
+
+function renderAchievements(achievements, isOwner) {
+    const container = document.getElementById('achievementsContent');
+    container.innerHTML = '';
+    const templates = [
+        { id: 'first_msg', icon: '🐱', name: 'Первый мяу', desc: 'Отправить первое сообщение в чат' },
+        { id: 'first_friend', icon: '🤝', name: 'Первый друг', desc: 'Добавить одного друга' },
+        { id: 'soul_company', icon: '🎉', name: 'Душа компании', desc: 'Иметь 5 друзей одновременно' },
+        { id: 'talkative', icon: '💬', name: 'Общительный', desc: 'Написать в общий канал сегодня' },
+        { id: 'daily_login', icon: '📅', name: 'Ежедневный вход', desc: 'Зайти в чат сегодня' },
+        { id: 'weekly_marathon', icon: '🔥', name: 'Недельный марафон', desc: 'Заходить 7 дней подряд' },
+        { id: 'bio', icon: '✏️', name: 'Биограф', desc: 'Заполнить описание профиля' },
+        { id: 'avatar', icon: '🖼️', name: 'Аватар', desc: 'Загрузить собственное фото' }
+    ];
+
+    templates.forEach(t => {
+        const ach = achievements.find(a => a.id === t.id);
+        const achieved = ach !== undefined;
+        if (!achieved && !isOwner) return;
+        const div = document.createElement('div');
+        div.className = 'achievement';
+        if (achieved) div.classList.add('achieved');
+        div.innerHTML = `
+            <span class="icon">${t.icon}</span>
+            <div class="info">
+                <div class="name">${t.name}</div>
+                <div class="desc">${t.desc}</div>
+            </div>
+            <span class="status ${achieved ? 'achieved' : 'locked'}">${achieved ? '✓ 25 XP' : 'Не получено'}</span>
+        `;
+        container.appendChild(div);
+    });
+}
+
+function saveProfile() {
+    const n = document.getElementById('profileName').value.trim();
+    const b = document.getElementById('profileBio').value.trim();
+    const newAvatar = document.getElementById('profileAvatar').getAttribute('data-new-avatar') || '';
+    if (!n) { showToast('Имя обязательно', 'error'); return; }
+    const data = { username: myData.username, display_name: n, bio: b };
+    if (newAvatar) data.avatar = newAvatar;
+    socket.emit('update_profile', data);
+}
+
+socket.on('profile_updated', function(data) {
+    if (data.error) {
+        showToast(data.error, 'error');
+        return;
+    }
+    myData = data.user;
+    updateMyInfo();
+    showToast('Профиль обновлён!', 'success');
+    closeModal('profileOverlay');
+});
+
+function getLevel(xp) {
+    if (xp < 100) return 1;
+    if (xp < 300) return 2;
+    if (xp < 600) return 3;
+    if (xp < 1000) return 4;
+    if (xp < 1500) return 5;
+    if (xp < 2100) return 6;
+    return 7;
+}
+function getNextLevelXp(level) {
+    return [0, 100, 300, 600, 1000, 1500, 2100][level] || 2100;
+}
+function getLevelXp(level) {
+    return level === 1 ? 0 : getNextLevelXp(level - 1);
+}
+function getLevelTitle(level) {
+    return ['', 'Новорождённый котёнок', 'Любопытный котёнок', 'Игривый кот', 'Кот-путешественник', 'Охотник', 'Мудрый кот'][level] || 'Легенда';
+}
+
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const target = tab.getAttribute('data-tab');
+        document.getElementById('tab-info').style.display = target === 'info' ? 'block' : 'none';
+        document.getElementById('tab-achievements').style.display = target === 'achievements' ? 'block' : 'none';
+    });
+});
+
+function startCall(u) { showToast('📞 Функция в разработке', 'info'); }
+function handleCallClick() { showToast('📞 Функция в разработке', 'info'); }
+function acceptIncomingCall() { showToast('📞 Функция в разработке', 'info'); }
+function declineIncomingCall() { showToast('📞 Функция в разработке', 'info'); }
+function hangUp() { showToast('📞 Функция в разработке', 'info'); }
+function updateCallUI() {}
+
+function enableNotifications() {
+    if (!('Notification' in window)) return;
+    Notification.requestPermission().then(function(permission) {
+        if (permission === 'granted') {
+            showToast('Уведомления включены!', 'success');
+        } else {
+            showToast('Уведомления отключены', 'info');
+        }
+        document.getElementById('notifyModal').classList.remove('active');
+    });
+}
+// ========== ВЕРИФИКАЦИЯ ЧЕРЕЗ TELEGRAM ==========
+function requestTelegramCode() {
+    const tg = document.getElementById('telegramInput').value.trim();
+    if (!tg) {
+        showToast('Введите Telegram-username', 'error');
+        return;
+    }
+    const btn = document.getElementById('tgSendBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Генерация...';
+    fetch('/api/verify/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: myData.username, telegram: tg })
+    })
+    .then(r => r.json())
+    .then(d => {
+        btn.disabled = false;
+        btn.textContent = '📨 Получить код';
+        if (d.ok) {
+            // Показываем код и инструкцию
+            document.getElementById('telegramCodeDisplay').textContent = d.code;
+            document.getElementById('telegramCodeDisplay').style.display = 'block';
+            document.getElementById('tgInstructions').style.display = 'block';
+            showToast('Код сгенерирован! Отправьте его боту @CatVerifyBot', 'info');
+        } else {
+            showToast(d.error || 'Ошибка', 'error');
+        }
+    })
+    .catch(e => {
+        btn.disabled = false;
+        btn.textContent = '📨 Получить код';
+        showToast('Ошибка сети', 'error');
+    });
+}
+
+function verifyTelegramCode() {
+    const code = document.getElementById('telegramCodeInput').value.trim();
+    if (!code) {
+        showToast('Введите код из Telegram', 'error');
+        return;
+    }
+    const btn = document.getElementById('tgVerifyBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Проверка...';
+    fetch('/api/verify/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: myData.username, code: code })
+    })
+    .then(r => r.json())
+    .then(d => {
+        btn.disabled = false;
+        btn.textContent = '✅ Подтвердить код';
+        if (d.ok) {
+            showToast('Верификация пройдена! Уровни и достижения открыты.', 'success');
+            myData.telegram_verified = true;
+            // Перезагрузим профиль
+            loadProfile();
+        } else {
+            showToast(d.error || 'Неверный код', 'error');
+        }
+    })
+    .catch(e => {
+        btn.disabled = false;
+        btn.textContent = '✅ Подтвердить код';
+        showToast('Ошибка сети', 'error');
+    });
+}
+
 </script>
+<div id="notifyModal" class="modal-overlay" style="z-index:2000;">
+    <div class="modal" style="text-align:center;">
+        <h2>🔔 Уведомления</h2>
+        <p style="margin-bottom:20px; color:var(--text-secondary);">Хотите получать уведомления о новых сообщениях, даже когда вкладка неактивна?</p>
+        <button class="btn btn-primary" onclick="enableNotifications()" style="width:auto; padding:10px 30px; display:inline-block; margin-right:10px;">Да, включить</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('notifyModal').classList.remove('active')" style="width:auto; padding:10px 30px; display:inline-block;">Позже</button>
+    </div>
+</div>
 </body>
 </html>

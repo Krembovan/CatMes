@@ -1,294 +1,87 @@
 import eventlet
 eventlet.monkey_patch()
 
-import os
-import time
-import uuid
-import json
-import html as html_module
-from flask import Flask, request, render_template, send_from_directory, g
+import json, os, time, hashlib, secrets, base64, uuid
+from flask import Flask, request, render_template, send_from_directory
 from flask_socketio import SocketIO, emit, join_room
 
-# Импорт модуля авторизации
-import auth
-
-# ============================================================
-# КОНФИГУРАЦИЯ
-# ============================================================
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', auth.hash_password(os.urandom(16).hex()))
+app.config['SECRET_KEY'] = os.environ.get('CAT_SECRET_KEY', os.urandom(32).hex())
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-DATA_DIR = os.environ.get('DATA_DIR', '/tmp/cat_data')
-os.makedirs(DATA_DIR, exist_ok=True)
+DATA_DIR = os.environ.get('CAT_DATA_DIR', '/tmp/cat_data')
+UPLOADS_DIR = os.path.join(DATA_DIR, 'uploads')
+os.makedirs(UPLOADS_DIR, exist_ok=True)
 
-DB_PATH = os.path.join(DATA_DIR, 'cat.db')
+user_sessions = {}
+last_action = {}
 
-# ============================================================
-# БАЗА ДАННЫХ SQLite
-# ============================================================
-def get_db():
-    """Получить соединение с БД (thread-safe через g)."""
-    if 'db' not in g:
-        g.db = __import__('sqlite3').connect(DB_PATH)
-        g.db.row_factory = __import__('sqlite3').Row
-        g.db.execute("PRAGMA journal_mode=WAL")
-        g.db.execute("PRAGMA foreign_keys=ON")
-    return g.db
-
-def close_db(error=None):
-    db = g.pop('db', None)
-    if db is not None:
-        db.close()
-
-app.teardown_appcontext(close_db)
-
-def init_db():
-    """Создать таблицы, если их нет."""
-    import sqlite3 as sql
-    conn = sql.connect(DB_PATH)
-    conn.executescript('''
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            display_name TEXT NOT NULL,
-            password_hash TEXT NOT NULL,
-            avatar TEXT DEFAULT '',
-            bio TEXT DEFAULT '',
-            role TEXT DEFAULT 'user',
-            friends TEXT DEFAULT '[]',
-            requests TEXT DEFAULT '[]',
-            notifications TEXT DEFAULT '[]',
-            last_seen REAL DEFAULT 0,
-            online INTEGER DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS messages (
-            id TEXT PRIMARY KEY,
-            room TEXT NOT NULL,
-            username TEXT NOT NULL,
-            user TEXT NOT NULL,
-            avatar TEXT DEFAULT '',
-            text TEXT DEFAULT '',
-            image TEXT DEFAULT '',
-            reply_to TEXT DEFAULT '',
-            reply_author TEXT DEFAULT '',
-            reply_text TEXT DEFAULT '',
-            timestamp REAL NOT NULL,
-            read INTEGER DEFAULT 0
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room);
-        CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
-    ''')
-    conn.commit()
-    conn.close()
-
-def migrate_add_new_columns():
-    """Добавить колонки image, reply_to, reply_author, reply_text если их нет."""
-    db = get_db()
-    try:
-        db.execute("ALTER TABLE messages ADD COLUMN image TEXT DEFAULT ''")
-    except:
-        pass
-    try:
-        db.execute("ALTER TABLE messages ADD COLUMN reply_to TEXT DEFAULT ''")
-    except:
-        pass
-    try:
-        db.execute("ALTER TABLE messages ADD COLUMN reply_author TEXT DEFAULT ''")
-    except:
-        pass
-    try:
-        db.execute("ALTER TABLE messages ADD COLUMN reply_text TEXT DEFAULT ''")
-    except:
-        pass
-    db.commit()
-
-# ============================================================
-# ИНИЦИАЛИЗАЦИЯ БД В КОНТЕКСТЕ ПРИЛОЖЕНИЯ
-# ============================================================
-with app.app_context():
-    init_db()
-    migrate_add_new_columns()
-    # Миграция с JSON вызовется позже, чтобы не срабатывала каждый раз при импорте
-    # но требует контекста, поэтому тоже обёрнута
-
-# ============================================================
-# УТИЛИТЫ РАБОТЫ С БД
-# ============================================================
-def load_users() -> dict:
-    """Загрузить всех пользователей как словарь {username: {...}}."""
-    db = get_db()
-    rows = db.execute("SELECT * FROM users").fetchall()
-    result = {}
-    for row in rows:
-        d = dict(row)
-        for field in ['friends', 'requests', 'notifications']:
-            try:
-                d[field] = json.loads(d[field])
-            except:
-                d[field] = []
-        result[d['username']] = d
-    return result
-
-def save_user(username: str, data: dict):
-    """Сохранить одного пользователя."""
-    db = get_db()
-    friends_json = json.dumps(data.get('friends', []), ensure_ascii=False)
-    requests_json = json.dumps(data.get('requests', []), ensure_ascii=False)
-    notifications_json = json.dumps(data.get('notifications', []), ensure_ascii=False)
-
-    db.execute('''
-        INSERT OR REPLACE INTO users (username, display_name, password_hash, avatar, bio, role, friends, requests, notifications, last_seen, online)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        username,
-        data.get('display_name', username),
-        data.get('password_hash', ''),
-        data.get('avatar', ''),
-        data.get('bio', ''),
-        data.get('role', 'user'),
-        friends_json,
-        requests_json,
-        notifications_json,
-        data.get('last_seen', 0),
-        int(data.get('online', False))
-    ))
-    db.commit()
-
-def load_messages() -> list:
-    """Загрузить все сообщения."""
-    db = get_db()
-    rows = db.execute("SELECT * FROM messages ORDER BY timestamp").fetchall()
-    return [dict(r) for r in rows]
-
-def save_message(msg: dict):
-    """Сохранить одно сообщение + обрезать историю до 500 последних."""
-    db = get_db()
-    msg['id'] = msg.get('id', str(uuid.uuid4()))
-    db.execute('''
-        INSERT OR IGNORE INTO messages (id, room, username, user, avatar, text, image, reply_to, reply_author, reply_text, timestamp, read)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        msg['id'],
-        msg.get('room', 'Общий'),
-        msg.get('username', ''),
-        msg.get('user', ''),
-        msg.get('avatar', ''),
-        msg.get('text', ''),
-        msg.get('image', ''),
-        msg.get('reply_to', ''),
-        msg.get('reply_author', ''),
-        msg.get('reply_text', ''),
-        msg.get('timestamp', time.time()),
-        int(msg.get('read', False))
-    ))
-
-    # Обрезаем старые сообщения (оставляем последние 500)
-    count = db.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-    if count > 500:
-        db.execute('''
-            DELETE FROM messages WHERE id IN (
-                SELECT id FROM messages ORDER BY timestamp ASC LIMIT ?
-            )
-        ''', (count - 500,))
-
-    db.commit()
-
-def get_user(username: str) -> dict | None:
-    """Получить одного пользователя по username."""
-    db = get_db()
-    row = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    if row is None:
-        return None
-    d = dict(row)
-    for field in ['friends', 'requests', 'notifications']:
+def load_db(key):
+    path = os.path.join(DATA_DIR, f'{key}.json')
+    if os.path.exists(path):
         try:
-            d[field] = json.loads(d[field])
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
         except:
-            d[field] = []
-    return d
+            pass
+    return [] if key == 'messages' else {}
 
-# ============================================================
-# КОРРЕКТНАЯ РОЛЬ (через auth.py)
-# ============================================================
-def get_role(username: str) -> str:
-    """Получить роль пользователя (синхронизирует с auth.DEFAULT_ROLES)."""
-    user = get_user(username.lower())
-    saved_role = user.get('role', 'user') if user else 'user'
-    role = auth.get_role(username.lower(), saved_role)
+def save_db(key, data):
+    path = os.path.join(DATA_DIR, f'{key}.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-    if user and user.get('role') != role:
-        user['role'] = role
-        save_user(username.lower(), user)
+def load_users():
+    return load_db('users')
 
-    return role
+def save_user(username, data):
+    users = load_db('users')
+    users[username] = data
+    save_db('users', users)
 
-# ============================================================
-# УВЕДОМЛЕНИЯ
-# ============================================================
-def notify_user(username: str, event: str, data: dict):
-    """Отправить SocketIO событие конкретному пользователю."""
-    sid = auth.get_session_sid(username)
+def load_messages():
+    return load_db('messages')
+
+def save_message(msg):
+    msgs = load_db('messages')
+    msgs.append(msg)
+    if len(msgs) > 500:
+        msgs = msgs[-500:]
+    save_db('messages', msgs)
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
+    return f"pbkdf2:sha256:100000${salt}${h.hex()}"
+
+def verify_password(password: str, hashed: str) -> bool:
+    if not hashed or not isinstance(hashed, str):
+        return False
+    if not hashed.startswith('pbkdf2:'):
+        return password == hashed
+    try:
+        meta_part, salt, stored_hash = hashed.split('$', 2)
+        _, _, iterations_str = meta_part.split(':')
+        iterations = int(iterations_str)
+        h = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), iterations)
+        return h.hex() == stored_hash
+    except Exception as e:
+        return False
+
+def notify_user(username, event, data):
+    sid = user_sessions.get(username)
     if sid:
         try:
             socketio.emit(event, data, room=sid)
-        except:
-            pass
+        except Exception as e:
+            print(f"[notify_user] Ошибка для @{username}: {e}")
 
-def notify_friends(username: str, event: str, data: dict):
-    """Отправить событие всем друзьям пользователя."""
-    user = get_user(username)
-    if user and 'friends' in user:
-        for friend in user['friends']:
+def notify_friends(username, event, data):
+    users = load_users()
+    if username in users:
+        for friend in users[username].get('friends', []):
             notify_user(friend, event, data)
 
-# ============================================================
-# МИГРАЦИЯ С JSON НА SQLite (одноразовая) в контексте приложения
-# ============================================================
-def migrate_json_to_sqlite():
-    """Перенести данные из старых JSON-файлов в SQLite (если нужно)."""
-    db = get_db()
-    count = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    if count > 0:
-        return
-
-    users_path = os.path.join(DATA_DIR, 'users.json')
-    messages_path = os.path.join(DATA_DIR, 'messages.json')
-
-    if os.path.exists(users_path):
-        with open(users_path, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-        for username, data in users.items():
-            if 'pass' in data and not data.get('password_hash'):
-                data['password_hash'] = auth.hash_password(data.pop('pass', ''))
-            elif 'pass' in data:
-                del data['pass']
-            save_user(username, data)
-        os.rename(users_path, users_path + '.bak')
-
-    if os.path.exists(messages_path):
-        with open(messages_path, 'r', encoding='utf-8') as f:
-            messages = json.load(f)
-        for msg in messages[:500]:
-            msg['id'] = msg.get('id', str(uuid.uuid4()))
-            save_message(msg)
-        os.rename(messages_path, messages_path + '.bak')
-
-# Запускаем миграцию при старте (в контексте)
-with app.app_context():
-    migrate_json_to_sqlite()
-
-# ============================================================
-# ФИЛЬТР ДЛЯ КЛИЕНТА (убираем password_hash)
-# ============================================================
-def safe_user_for_client(user: dict) -> dict:
-    """Вернуть копию пользователя без конфиденциальных полей."""
-    return {k: v for k, v in user.items() if k != 'password_hash'}
-
-# ============================================================
-# МАРШРУТЫ FLASK
-# ============================================================
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -301,200 +94,43 @@ def static_files(filename):
 def service_worker():
     return send_from_directory('templates/static', 'sw.js')
 
-# ============================================================
-# АДМИН-ПАНЕЛЬ (ИСПРАВЛЕН XSS + ИСПОЛЬЗУЕТ auth.py)
-# ============================================================
-@app.route('/admin')
-def admin_panel():
-    auth_header = request.authorization
-    if not auth_header:
-        return ('Доступ запрещён', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(UPLOADS_DIR, filename)
 
-    username = auth_header.username.lower()
-    password = auth_header.password
-    user = get_user(username)
+RATE_LIMIT = 0.5
 
-    if not user or not auth.verify_password(password, user.get('password_hash', '')):
-        return ('Неверный логин или пароль', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+def check_rate_limit(username):
+    now = time.time()
+    last = last_action.get(username, 0)
+    if now - last < RATE_LIMIT:
+        return False
+    last_action[username] = now
+    return True
 
-    role = get_role(username)
-    if not auth.can_access_admin(role):
-        return ('Доступ запрещён', 403)
+ROLES = {'krembovan': 'owner'}
 
-    msgs = load_messages()
-    msg_count = len(msgs)
-    general_msgs = [m for m in msgs if m.get('room') == 'Общий']
-    last_msgs = general_msgs[-10:] if general_msgs else []
-    last_msgs.reverse()
+def html_escape(s):
+    return str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&#x27;')
 
-    users_list = []
-    all_users = load_users()
-    for uname, d in all_users.items():
-        users_list.append({
-            'username': html_module.escape(uname),
-            'display_name': html_module.escape(d.get('display_name', '')),
-            'role': html_module.escape(d.get('role', 'user')),
-            'friends': len(d.get('friends', [])),
-            'requests': len(d.get('requests', []))
-        })
+def sync_roles():
+    users = load_users()
+    for un in users:
+        if un in ROLES:
+            users[un]['role'] = ROLES[un]
+        if 'role' not in users[un]:
+            users[un]['role'] = 'user'
+    save_db('users', users)
 
-    can_manage = role in ['owner', 'admin']
-    role_display = auth.get_role_display(role)
+sync_roles()
 
-    html = '''<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>CAT Admin Panel</title>
-    <style>
-        body { background: #0d1117; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; padding: 30px; }
-        h1 { background: linear-gradient(135deg, #7c5cfc, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .stats { display: flex; gap: 20px; margin: 20px 0; }
-        .stat-card { background: #161b22; padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.06); flex: 1; text-align: center; }
-        .stat-value { font-size: 2rem; font-weight: 900; color: #7c5cfc; }
-        .stat-label { font-size: 0.8rem; color: #94a3b8; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #161b22; border-radius: 16px; overflow: hidden; }
-        th { background: #7c5cfc; padding: 12px 16px; text-align: left; font-size: 0.8rem; text-transform: uppercase; }
-        td { padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); }
-        tr:hover { background: rgba(255,255,255,0.02); }
-        .btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.75rem; font-weight: 600; margin: 2px; }
-        .btn-danger { background: #ef4444; color: white; }
-        .btn-sm { background: #7c5cfc; color: white; }
-        .badge { padding: 3px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; }
-        .badge-owner { background: #f59e0b; color: #0d1117; }
-        .badge-admin { background: #ef4444; color: white; }
-        .badge-mod { background: #10b981; color: white; }
-        .badge-user { background: #94a3b8; color: #0d1117; }
-        .section { margin-top: 30px; }
-        .section h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 10px; }
-        .msg-item { background: #161b22; padding: 10px 16px; border-radius: 8px; margin: 5px 0; font-size: 0.85rem; }
-        select { background: #161b22; color: white; border: 1px solid rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 6px; }
-        .user-info { color: #f59e0b; margin-bottom: 20px; }
-    </style>
-</head>
-<body>
-    <h1>⚡ CAT Admin Panel</h1>
-    <div class="user-info">Вы вошли как: @''' + html_module.escape(username) + ''' (''' + html_module.escape(role_display) + ''')</div>
-    <div class="stats">
-        <div class="stat-card"><div class="stat-value">''' + str(len(users_list)) + '''</div><div class="stat-label">Пользователей</div></div>
-        <div class="stat-card"><div class="stat-value">''' + str(msg_count) + '''</div><div class="stat-label">Сообщений</div></div>
-    </div>
-    <div class="section"><h2>👥 Пользователи</h2><table>
-        <tr><th>Username</th><th>Имя</th><th>Роль</th><th>Друзья</th><th>Запросы</th>'''
-
-    if can_manage:
-        html += '<th>Действия</th>'
-    html += '</tr>'
-
-    for u in users_list:
-        bc = 'badge-' + ('owner' if u['role'] == 'owner' else 'admin' if u['role'] == 'admin' else 'mod' if u['role'] == 'moderator' else 'user')
-        rn = {
-            'owner': 'Владелец', 'admin': 'Админ', 'moderator': 'Модер', 'user': 'Пользователь'
-        }.get(u['role'], u['role'])
-        html += f'''<tr><td>@{u['username']}</td><td>{u['display_name']}</td><td><span class="badge {bc}">{rn}</span></td><td>{u['friends']}</td><td>{u['requests']}</td>'''
-
-        if can_manage and u['role'] != 'owner':
-            admin_role = get_role(username)
-            target_role = get_role(u['username'].lower())
-            if auth.can_manage_role(admin_role, target_role):
-                html += f'''<td><select onchange="setRole('{u['username']}',this.value)">
-                    <option value="user" {"selected" if u['role']=='user' else ""}>Пользователь</option>
-                    <option value="moderator" {"selected" if u['role']=='moderator' else ""}>Модератор</option>
-                    <option value="admin" {"selected" if u['role']=='admin' else ""}>Админ</option></select>
-                    <button class="btn btn-danger" onclick="deleteUser('{u['username']}')">Удалить</button></td>'''
-            else:
-                html += '<td>—</td>'
-        elif u['role'] == 'owner':
-            html += '<td><span style="color:#f59e0b;">Владелец</span></td>'
-        html += '</tr>'
-
-    html += '''</table></div><div class="section"><h2>📝 Сообщения (модерация)</h2>'''
-    for m in last_msgs:
-        msg_user = html_module.escape(m.get('username', ''))
-        msg_text = html_module.escape(m.get('text', '')[:100])
-        msg_id = html_module.escape(str(m.get('id', '')))
-        html += f'''<div class="msg-item"><b>@{msg_user}</b>: {msg_text}
-            <button class="btn btn-sm" onclick="deleteMsg('{msg_id}')" style="float:right;">✕</button></div>'''
-
-    html += '''</div><script>
-        function deleteUser(un){if(!confirm("Удалить @"+un+"?"))return;
-            fetch('/admin/delete/'+un,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}
-        function setRole(un,r){fetch('/admin/setrole/'+un+'/'+r,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}
-        function deleteMsg(id){fetch('/admin/deletemsg/'+id,{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}
-    </script></body></html>'''
-    return html
-
-
-@app.route('/admin/delete/<username>', methods=['POST'])
-def admin_delete_user(username):
-    auth_header = request.authorization
-    if not auth_header:
-        return ({'message': 'Доступ запрещён'}, 401)
-
-    admin_un = auth_header.username.lower()
-    if get_role(admin_un) not in ['owner', 'admin']:
-        return ({'message': 'Нет прав'}, 403)
-
+def get_role(username):
     un = username.lower()
-    target_role = get_role(un)
+    users = load_users()
+    if un in users and 'role' in users[un]:
+        return users[un]['role']
+    return ROLES.get(un, 'user')
 
-    if not auth.can_manage_role(get_role(admin_un), target_role):
-        return ({'message': 'Недостаточно прав для удаления этого пользователя'}, 403)
-
-    db = get_db()
-    db.execute("DELETE FROM users WHERE username = ?", (un,))
-    db.commit()
-    return {'message': f'Пользователь @{un} удалён'}
-
-
-@app.route('/admin/setrole/<username>/<role>', methods=['POST'])
-def admin_set_role(username, role):
-    auth_header = request.authorization
-    if not auth_header:
-        return ({'message': 'Доступ запрещён'}, 401)
-
-    admin_un = auth_header.username.lower()
-    admin_role = get_role(admin_un)
-
-    if admin_role not in ['owner', 'admin']:
-        return ({'message': 'Нет прав'}, 403)
-
-    if role not in ['user', 'moderator', 'admin']:
-        return ({'message': 'Неверная роль'}, 400)
-
-    un = username.lower()
-    target_role = get_role(un)
-
-    if not auth.can_manage_role(admin_role, target_role):
-        return ({'message': 'Недостаточно прав для изменения роли этого пользователя'}, 403)
-
-    user = get_user(un)
-    if user:
-        user['role'] = role
-        save_user(un, user)
-
-    return {'message': f'Роль @{un} изменена на {role}'}
-
-
-@app.route('/admin/deletemsg/<msg_id>', methods=['POST'])
-def admin_delete_msg(msg_id):
-    auth_header = request.authorization
-    if not auth_header:
-        return ({'message': 'Доступ запрещён'}, 401)
-
-    role = get_role(auth_header.username.lower())
-    if not auth.can_delete_message(role):
-        return ({'message': 'Нет прав'}, 403)
-
-    db = get_db()
-    db.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
-    db.commit()
-    return {'message': 'Сообщение удалено'}
-
-
-# ============================================================
-# SOCKET.IO ОБРАБОТЧИКИ
-# ============================================================
 @socketio.on('auth')
 def handle_auth(data):
     action = data.get('action', 'login')
@@ -503,258 +139,200 @@ def handle_auth(data):
     pwd = data.get('password', '')
     pwd2 = data.get('password2', '')
 
-    valid_un, un = auth.validate_username(un)
-    if not valid_un:
-        emit('auth_result', {'success': False, 'error': un})
+    if not un or len(un) < 3 or len(un) > 20:
+        emit('auth_result', {'success': False, 'error': 'Логин: 3-20 символов'})
+        return
+    if not pwd or len(pwd) < 4:
+        emit('auth_result', {'success': False, 'error': 'Пароль: минимум 4 символа'})
         return
 
-    valid_pwd, pwd = auth.validate_password(pwd)
-    if not valid_pwd:
-        emit('auth_result', {'success': False, 'error': pwd})
-        return
+    users = load_users()
 
     if action == 'register':
-        valid_dn, dn = auth.validate_display_name(dn)
-        if not valid_dn:
-            emit('auth_result', {'success': False, 'error': dn})
-            return
-
         if pwd != pwd2:
             emit('auth_result', {'success': False, 'error': 'Пароли не совпадают'})
             return
-
-        existing = get_user(un)
-        if existing:
+        if un in users:
             emit('auth_result', {'success': False, 'error': 'Пользователь уже существует'})
             return
 
         new_user = {
-            'username': un,
-            'display_name': dn,
-            'password_hash': auth.hash_password(pwd),
+            'username': un, 'display_name': dn or un, 'pass': hash_password(pwd),
             'avatar': f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
-            'bio': 'Пользователь CAT',
-            'friends': [],
-            'requests': [],
-            'notifications': [],
-            'role': get_role(un),
-            'last_seen': time.time(),
-            'online': True
+            'bio': 'Пользователь CAT', 'friends': [], 'requests': [], 'notifications': [], 'role': get_role(un),
+            'xp': 0, 'achievements': [], 'telegram_verified': False
         }
         save_user(un, new_user)
-        auth.set_session(un, request.sid)
-        auth.record_login_attempt(un, True)
-
-        emit('auth_result', {'success': True, 'user': safe_user_for_client(new_user)})
-
-    else:  # login
-        allowed, error = auth.check_login_rate_limit(un)
-        if not allowed:
-            emit('auth_result', {'success': False, 'error': error})
-            return
-
-        user = get_user(un)
-        if not user:
-            auth.record_login_attempt(un, False)
+        user_sessions[un] = request.sid
+        emit('auth_result', {'success': True, 'user': new_user})
+    else:
+        if un not in users:
             emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
             return
-
-        if not auth.verify_password(pwd, user.get('password_hash', '')):
-            auth.record_login_attempt(un, False)
+        if not verify_password(pwd, users[un]['pass']):
             emit('auth_result', {'success': False, 'error': 'Неверный пароль'})
             return
 
-        if auth.needs_password_rehash(user.get('password_hash', '')):
-            user['password_hash'] = auth.hash_password(pwd)
-            save_user(un, user)
-
-        auth.record_login_attempt(un, True)
-        user['role'] = get_role(un)
-        user['friends'] = user.get('friends', [])
-        user['requests'] = user.get('requests', [])
-        user['notifications'] = user.get('notifications', [])
-        user['online'] = True
-        user['last_seen'] = time.time()
-        auth.set_session(un, request.sid)
-
-        save_user(un, user)
+        user_data = users[un]
+        if not user_data['pass'].startswith('pbkdf2:'):
+            user_data['pass'] = hash_password(pwd)
+        user_data['role'] = get_role(un)
+        user_data.setdefault('friends', [])
+        user_data.setdefault('requests', [])
+        user_data.setdefault('notifications', [])
+        user_data.setdefault('xp', 0)
+        user_data.setdefault('achievements', [])
+        user_data.setdefault('telegram_verified', False)
+        user_sessions[un] = request.sid
+        user_data['online'] = True
+        user_data['last_seen'] = time.time()
+        save_user(un, user_data)
         notify_friends(un, 'friend_online', {'username': un, 'online': True})
-
-        emit('auth_result', {'success': True, 'user': safe_user_for_client(user)})
-
+        emit('auth_result', {'success': True, 'user': user_data})
 
 @socketio.on('update_profile')
 def handle_profile_update(data):
     un = data.get('username', '').lower()
-    user = get_user(un)
-    if not user:
+    users = load_users()
+    if un not in users:
+        emit('profile_updated', {'error': 'Пользователь не найден'})
         return
-
-    if data.get('display_name', '').strip():
-        valid_dn, dn = auth.validate_display_name(data['display_name'])
-        if valid_dn:
-            user['display_name'] = dn
-
-    if 'bio' in data:
-        user['bio'] = data['bio'].strip()[:200]
-
-    if data.get('avatar', '').strip():
-        avatar = data['avatar'].strip()
-        if avatar.startswith('http://') or avatar.startswith('https://'):
-            user['avatar'] = avatar[:500]
-
-    save_user(un, user)
-    emit('profile_updated', {'user': safe_user_for_client(user)})
-
+    if data.get('display_name', '').strip(): users[un]['display_name'] = data['display_name'].strip()
+    if 'bio' in data: users[un]['bio'] = data['bio'].strip()
+    av = data.get('avatar', '').strip()
+    if av:
+        av_lower = av.lower()
+        if av_lower.startswith('javascript:'):
+            av = ''
+        elif av_lower.startswith('data:') and not av_lower.startswith('data:image/'):
+            av = ''
+        elif not (av_lower.startswith('http://') or av_lower.startswith('https://') or av_lower.startswith('data:image/') or av_lower.startswith('/uploads/')):
+            av = ''
+        if av:
+            users[un]['avatar'] = av
+    save_user(un, users[un])
+    emit('profile_updated', {'user': users[un]})
 
 @socketio.on('send_friend_request')
 def handle_friend_request(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower().replace('@', '')
-
-    if not target_un:
-        emit('friend_msg', {'text': 'Введите имя', 'type': 'error'})
+    if not target_un: 
+        emit('friend_msg', {'text': 'Введите имя', 'type': 'error'}); 
         return
-
-    target = get_user(target_un)
-    if not target:
-        emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'})
+    if my_un and not check_rate_limit(my_un):
+        emit('friend_msg', {'text': 'Слишком часто. Подождите.', 'type': 'error'})
         return
-    if target_un == my_un:
-        emit('friend_msg', {'text': 'Нельзя добавить себя', 'type': 'error'})
+    users = load_users()
+    if target_un not in users: 
+        emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'}); 
         return
-    if my_un in target.get('friends', []):
-        emit('friend_msg', {'text': 'Вы уже друзья', 'type': 'info'})
+    if target_un == my_un: 
+        emit('friend_msg', {'text': 'Нельзя добавить себя', 'type': 'error'}); 
         return
-    if my_un in target.get('requests', []):
-        emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'})
+    target = users[target_un]
+    if my_un in target.get('friends', []): 
+        emit('friend_msg', {'text': 'Вы уже друзья', 'type': 'info'}); 
         return
-
-    target['requests'] = target.get('requests', [])
-    target['requests'].append(my_un)
-
+    if my_un in target.get('requests', []): 
+        emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'}); 
+        return
+    target.setdefault('requests', []).append(my_un)
     notif = {
-        'id': str(uuid.uuid4()),
-        'type': 'friend_request',
-        'from': my_un,
-        'from_name': get_user(my_un).get('display_name', my_un) if get_user(my_un) else my_un,
-        'text': f'@{my_un} хочет добавить вас в друзья',
-        'timestamp': time.time(),
-        'read': False
+        'id': str(int(time.time() * 1000)), 'type': 'friend_request', 'from': my_un,
+        'from_name': users[my_un].get('display_name', my_un),
+        'text': f'@{my_un} хочет добавить вас в друзья', 'timestamp': time.time(), 'read': False
     }
-    target['notifications'] = target.get('notifications', [])
-    target['notifications'].insert(0, notif)
-
+    target.setdefault('notifications', []).insert(0, notif)
     save_user(target_un, target)
     emit('friend_msg', {'text': f'Запрос отправлен @{target_un}', 'type': 'success'})
-    notify_user(target_un, 'incoming_friend_request', {'user': safe_user_for_client(target), 'from': my_un})
-
+    notify_user(target_un, 'incoming_friend_request', {'user': target, 'from': my_un})
 
 @socketio.on('accept_friend')
 def handle_accept(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
-
-    user = get_user(my_un)
-    if not user:
-        return
-
+    users = load_users()
+    if my_un not in users: return
+    user = users[my_un]
     found = None
     for req in user.get('requests', []):
-        if req.lower() == target_un:
+        if req.lower() == target_un: 
             found = req
             break
-
-    if not found:
-        return
-
+    if not found: return
     user['requests'].remove(found)
-    user['friends'] = user.get('friends', [])
-    if target_un not in user['friends']:
-        user['friends'].append(target_un)
-
-    target = get_user(target_un)
-    if target:
-        target['friends'] = target.get('friends', [])
-        if my_un not in target['friends']:
-            target['friends'].append(my_un)
-        save_user(target_un, target)
-
-    user['notifications'] = [
-        n for n in user.get('notifications', [])
-        if not (n.get('type') == 'friend_request' and n.get('from', '').lower() == target_un)
-    ]
-
+    if target_un not in user.get('friends', []): 
+        user.setdefault('friends', []).append(target_un)
+    if target_un in users:
+        if my_un not in users[target_un].get('friends', []):
+            users[target_un].setdefault('friends', []).append(my_un)
+            save_user(target_un, users[target_un])
+    user['notifications'] = [n for n in user.get('notifications', []) if not (n.get('type')=='friend_request' and n.get('from','').lower()==target_un)]
     save_user(my_un, user)
-    emit('auth_result', {'success': True, 'user': safe_user_for_client(user)})
-    notify_user(target_un, 'friend_accepted_notify', {'user': safe_user_for_client(target) if target else None, 'by': my_un})
-
+    emit('auth_result', {'success': True, 'user': user})
+    notify_user(target_un, 'friend_accepted_notify', {'user': users.get(target_un), 'by': my_un})
 
 @socketio.on('decline_friend')
 def handle_decline(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
-
-    user = get_user(my_un)
-    if not user:
-        return
-
+    users = load_users()
+    if my_un not in users: return
+    user = users[my_un]
     found = None
     for req in user.get('requests', []):
-        if req.lower() == target_un:
+        if req.lower() == target_un: 
             found = req
             break
-
-    if found:
+    if found: 
         user['requests'].remove(found)
-
-    user['notifications'] = [
-        n for n in user.get('notifications', [])
-        if not (n.get('type') == 'friend_request' and n.get('from', '').lower() == target_un)
-    ]
-
+    user['notifications'] = [n for n in user.get('notifications', []) if not (n.get('type')=='friend_request' and n.get('from','').lower()==target_un)]
     save_user(my_un, user)
-    emit('auth_result', {'success': True, 'user': safe_user_for_client(user)})
-
+    emit('auth_result', {'success': True, 'user': user})
 
 @socketio.on('remove_friend')
 def handle_remove_friend(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
-
-    user = get_user(my_un)
-    if not user:
-        return
-
-    if target_un in user.get('friends', []):
-        user['friends'].remove(target_un)
-        save_user(my_un, user)
-
-    target = get_user(target_un)
-    if target and my_un in target.get('friends', []):
-        target['friends'].remove(my_un)
-        save_user(target_un, target)
-
-    emit('auth_result', {'success': True, 'user': safe_user_for_client(user)})
-    notify_user(target_un, 'friend_removed_notify', {'user': safe_user_for_client(target) if target else None, 'by': my_un})
-
+    users = load_users()
+    if my_un not in users: return
+    if target_un in users[my_un].get('friends', []):
+        users[my_un]['friends'].remove(target_un)
+        save_user(my_un, users[my_un])
+    if target_un in users and my_un in users[target_un].get('friends', []):
+        users[target_un]['friends'].remove(my_un)
+        save_user(target_un, users[target_un])
+    emit('auth_result', {'success': True, 'user': users[my_un]})
+    notify_user(target_un, 'friend_removed_notify', {'user': users.get(target_un), 'by': my_un})
 
 @socketio.on('delete_message')
 def handle_delete_message(data):
-    msg_id = str(data.get('msg_id', ''))
+    msg_ts = str(data.get('msg_id', ''))
     username = data.get('username', '').lower()
     role = get_role(username)
 
-    if not auth.can_delete_message(role):
+    msgs = load_messages()
+    target_msg = None
+    for m in msgs:
+        if str(m.get('id')) == msg_ts or str(m.get('timestamp')) == msg_ts:
+            target_msg = m
+            break
+
+    can_delete = False
+    if role in ['owner', 'admin', 'moderator']:
+        can_delete = True
+    elif target_msg and target_msg.get('username', '').lower() == username:
+        if target_msg.get('room', '').startswith('dm_'):
+            can_delete = True
+
+    if not can_delete:
         emit('error_msg', {'text': 'Нет прав'})
         return
 
-    db = get_db()
-    db.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
-    db.commit()
-
-    emit('message_deleted', {'msg_id': msg_id}, broadcast=True)
-
+    msgs = [m for m in msgs if not (str(m.get('id')) == msg_ts or str(m.get('timestamp')) == msg_ts)]
+    save_db('messages', msgs)
+    emit('message_deleted', {'msg_id': msg_ts}, broadcast=True)
 
 @socketio.on('message')
 def handle_msg(data):
@@ -762,18 +340,37 @@ def handle_msg(data):
     text = data.get('text', '').strip()
     image = data.get('image', '').strip()
     reply_to = data.get('reply_to', '')
+    username = data.get('username', '')
 
-    # Должен быть либо текст, либо изображение
+    if username and not check_rate_limit(username):
+        emit('error_msg', {'text': 'Слишком часто. Подождите.'})
+        return
+
+    if room == 'Новости' and get_role(username) not in ['owner', 'admin']:
+        return
+
     if not text and not image:
         return
-    if text and len(text) > 1000:
+    if text and len(text) > 5000:
         return
-    if image and len(image) > 5 * 1024 * 1024:
-        return
-    if image and not image.startswith('data:image/'):
-        return
+    if image:
+        if len(image) > 5 * 1024 * 1024:
+            return
+        if not image.startswith('data:image/'):
+            return
+        try:
+            img_data = base64.b64decode(image.split(',', 1)[1])
+            ext = image.split(';')[0].split('/')[-1]
+            if ext not in ('png', 'jpeg', 'jpg', 'gif', 'webp'):
+                ext = 'png'
+            img_filename = f"{uuid.uuid4()}.{ext}"
+            img_path = os.path.join(UPLOADS_DIR, img_filename)
+            with open(img_path, 'wb') as f:
+                f.write(img_data)
+            image = f'/uploads/{img_filename}'
+        except Exception:
+            return
 
-    # Нормализация DM-комнаты
     if room.startswith('dm_'):
         parts = room.split('_')
         if len(parts) >= 3:
@@ -786,12 +383,13 @@ def handle_msg(data):
     data['image'] = image
     data['read'] = False
 
-    # Если это ответ (reply)
+    data['id'] = data.get('id', str(uuid.uuid4()))
+
     if reply_to:
         data['reply_to'] = reply_to
         msgs = load_messages()
         for m in msgs:
-            if str(m.get('id')) == str(reply_to) or str(m.get('timestamp')) == str(reply_to):
+            if str(m.get('timestamp')) == str(reply_to) or str(m.get('id')) == str(reply_to):
                 data['reply_author'] = m.get('user') or m.get('username', '')
                 data['reply_text'] = (m.get('text') or (m.get('image') and '[Изображение]') or '')[:100]
                 break
@@ -812,60 +410,49 @@ def handle_msg(data):
 
     emit('message', data, room=room)
 
-
 @socketio.on('mark_read')
 def handle_mark_read(data):
     room = data.get('room', '')
     username = data.get('username', '')
-
     if room:
-        db = get_db()
-        db.execute(
-            "UPDATE messages SET read = 1 WHERE room = ? AND username != ?",
-            (room, username)
-        )
-        db.commit()
-        emit('messages_read', {'room': room, 'by': username}, room=room)
-
+        msgs = load_messages()
+        changed = False
+        for m in msgs:
+            if m.get('room') == room and m.get('username') != username and not m.get('read'):
+                m['read'] = True
+                changed = True
+        if changed:
+            save_db('messages', msgs)
+            emit('messages_read', {'room': room, 'by': username}, room=room)
 
 @socketio.on('join')
 def on_join(data):
     room = data.get('room', 'Общий')
-
     if room.startswith('dm_'):
         parts = room.split('_')
         if len(parts) >= 3:
             a, b = sorted([parts[1], parts[2]])
             room = f"dm_{a}_{b}"
-
     join_room(room)
-
-    db = get_db()
-    msgs = db.execute(
-        "SELECT * FROM messages WHERE room = ? ORDER BY timestamp DESC LIMIT 50",
-        (room,)
-    ).fetchall()
-
-    hist = [dict(m) for m in reversed(msgs)]
+    msgs = load_messages()
+    hist = [m for m in msgs if m.get('room') == room][-50:]
     emit('history', hist)
-
 
 @socketio.on('get_rooms')
 def get_rooms():
-    emit('room_list', {'Общий': {"name": "Общий канал", "type": "public"}})
-
+    emit('room_list', {
+        'Общий': {"name": "Общий канал", "type": "public"},
+        'Новости': {"name": "Новости", "type": "news"}
+    })
 
 @socketio.on('get_user_profile')
 def handle_get_user_profile(data):
     target_un = data.get('username', '').strip().lower().replace('@', '')
-    user = get_user(target_un)
-
-    if not user:
+    users = load_users()
+    if target_un not in users:
         emit('user_profile', {'error': 'Пользователь не найден'})
         return
-
-    role = get_role(target_un)
-
+    user = users[target_un]
     emit('user_profile', {
         'username': target_un,
         'user': {
@@ -874,73 +461,227 @@ def handle_get_user_profile(data):
             'bio': user.get('bio', ''),
             'friends': user.get('friends', []),
             'requests': user.get('requests', []),
-            'role': role,
-            'role_name': auth.get_role_display(role),
-            'online': auth.is_online(target_un),
-            'last_seen': user.get('last_seen', 0)
+            'role': get_role(target_un),
+            'online': user.get('online', False),
+            'last_seen': user.get('last_seen', 0),
+            'xp': user.get('xp', 0),
+            'achievements': user.get('achievements', []),
+            'telegram_verified': user.get('telegram_verified', False)
         }
     })
-
 
 @socketio.on('check_status')
 def handle_check_status(data):
     un = data.get('username', '').lower()
-    emit('friend_online', {'username': un, 'online': auth.is_online(un)})
-
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    username = auth.remove_session(request.sid)
-    if username:
-        user = get_user(username)
-        if user:
-            user['online'] = False
-            user['last_seen'] = time.time()
-            save_user(username, user)
-            notify_friends(username, 'friend_online', {'username': username, 'online': False})
-
-
-@socketio.on('typing')
-def handle_typing(data):
-    room = data.get('room', '')
-    if room and room.startswith('dm_'):
-        emit('user_typing', {
-            'username': data.get('username'),
-            'user': data.get('user')
-        }, room=room, include_self=False)
-
+    emit('friend_online', {'username': un, 'online': un in user_sessions})
 
 @socketio.on('get_avatar')
 def handle_get_avatar(data):
     un = data.get('username', '').lower()
-    user = get_user(un)
-    if user:
-        emit('friend_avatar', {'username': un, 'avatar': user.get('avatar', '')})
+    users = load_users()
+    if un in users:
+        emit('friend_avatar', {'username': un, 'avatar': users[un].get('avatar', '')})
 
+@socketio.on('disconnect')
+def handle_disconnect():
+    users = load_users()
+    for un, sid in list(user_sessions.items()):
+        if sid == request.sid:
+            del user_sessions[un]
+            if un in users:
+                users[un]['online'] = False
+                users[un]['last_seen'] = time.time()
+                save_user(un, users[un])
+                notify_friends(un, 'friend_online', {'username': un, 'online': False})
+            break
 
-# WebRTC сигналинг
+@socketio.on('typing')
+def handle_typing(data):
+    room = data.get('room', '')
+    if room.startswith('dm_'):
+        emit('user_typing', {'username': data.get('username'), 'user': data.get('user')}, room=room, include_self=False)
+
 @socketio.on('call_user')
 def handle_call_user(data):
-    target = data.get('to')
-    notify_user(target, 'incoming_call', {
-        'from': data.get('from', ''),
-        'sdp': data.get('sdp')
-    })
-
+    notify_user(data.get('to'), 'incoming_call', {'from': data.get('from', ''), 'sdp': data.get('sdp')})
 
 @socketio.on('call_accepted')
 def handle_call_accepted(data):
     notify_user(data.get('to'), 'call_accepted', {'sdp': data.get('sdp')})
 
-
 @socketio.on('call_signal')
 def handle_call_signal(data):
     notify_user(data.get('to'), 'call_signal', {'ice': data.get('ice')})
 
+@app.route('/admin')
+def admin_panel():
+    auth = request.authorization
+    if not auth:
+        return ('Forbidden', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+    un = auth.username.lower()
+    pw = auth.password
+    users = load_users()
+    if un not in users or not verify_password(pw, users[un].get('pass', '')):
+        return ('Wrong', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+    if get_role(un) not in ['owner', 'admin', 'moderator']:
+        return ('Forbidden', 403)
+    msgs = load_messages()
+    general = [m for m in msgs if m.get('room') == 'Общий'][-10:][::-1]
+    users_list = []
+    for uname, d in load_users().items():
+        users_list.append({
+            'username': uname,
+            'display_name': d.get('display_name',''),
+            'role': d.get('role','user'),
+            'friends': len(d.get('friends',[])),
+            'requests': len(d.get('requests',[]))
+        })
+    can = get_role(un) in ['owner','admin']
+    html = '''<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>CAT Admin</title><style>
+    body{background:#0d1117;color:#e2e8f0;font-family:sans-serif;padding:30px}
+    h1{background:linear-gradient(135deg,#7c5cfc,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .stats{display:flex;gap:20px;margin:20px 0}
+    .stat-card{background:#161b22;padding:20px;border-radius:16px;border:1px solid rgba(255,255,255,0.06);flex:1;text-align:center}
+    .stat-value{font-size:2rem;font-weight:900;color:#7c5cfc}
+    .stat-label{font-size:0.8rem;color:#94a3b8}
+    table{width:100%;border-collapse:collapse;margin-top:20px;background:#161b22;border-radius:16px;overflow:hidden}
+    th{background:#7c5cfc;padding:12px 16px;text-align:left;font-size:0.8rem;text-transform:uppercase}
+    td{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04)}
+    tr:hover{background:rgba(255,255,255,0.02)}
+    .btn{padding:6px 14px;border-radius:8px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;margin:2px}
+    .btn-danger{background:#ef4444;color:white}
+    .btn-sm{background:#7c5cfc;color:white}
+    .badge{padding:3px 10px;border-radius:20px;font-size:0.7rem;font-weight:700}
+    .badge-owner{background:#f59e0b;color:#0d1117}
+    .badge-admin{background:#ef4444;color:white}
+    .badge-mod{background:#10b981;color:white}
+    .badge-user{background:#94a3b8;color:#0d1117}
+    .section{margin-top:30px}
+    .section h2{font-size:1rem;color:#94a3b8;margin-bottom:10px}
+    .msg-item{background:#161b22;padding:10px 16px;border-radius:8px;margin:5px 0;font-size:0.85rem}
+    select{background:#161b22;color:white;border:1px solid rgba(255,255,255,0.1);padding:4px 8px;border-radius:6px}
+    .user-info{color:#f59e0b;margin-bottom:20px}
+    </style></head><body><h1>⚡ CAT Admin Panel</h1><div class="user-info">Вы вошли как: @''' + html_escape(un) + ''' (''' + {'owner':'Владелец','admin':'Админ','moderator':'Модер'}.get(get_role(un),'') + ''')</div>
+    <div class="stats"><div class="stat-card"><div class="stat-value">''' + str(len(users_list)) + '''</div><div class="stat-label">Пользователей</div></div>
+    <div class="stat-card"><div class="stat-value">''' + str(len(msgs)) + '''</div><div class="stat-label">Сообщений</div></div></div>
+    <div class="section"><h2>👥 Пользователи</h2><table><tr><th>Username</th><th>Имя</th><th>Роль</th><th>Друзья</th><th>Запросы</th>'''
+    if can: 
+        html += '<th>Действия</th>'
+    html += '</tr>'
+    for u in users_list:
+        bc = 'badge-' + ('owner' if u['role']=='owner' else 'admin' if u['role']=='admin' else 'mod' if u['role']=='moderator' else 'user')
+        rn = {'owner':'Владелец','admin':'Админ','moderator':'Модер','user':'Пользователь'}.get(u['role'],u['role'])
+        html += f'<tr><td>@{html_escape(u["username"])}</td><td>{html_escape(u["display_name"])}</td><td><span class="badge {bc}">{html_escape(rn)}</span></td><td>{u["friends"]}</td><td>{u["requests"]}</td>'
+        if can and u['role'] != 'owner':
+            html += f'<td><select onchange="setRole(\'{html_escape(u["username"])}\',this.value)"><option value="user" {"selected" if u["role"]=="user" else ""}>Пользователь</option><option value="moderator" {"selected" if u["role"]=="moderator" else ""}>Модератор</option><option value="admin" {"selected" if u["role"]=="admin" else ""}>Админ</option></select> <button class="btn btn-danger" onclick="deleteUser(\'{html_escape(u["username"])}\')">Удалить</button></td>'
+        elif u['role'] == 'owner':
+            html += '<td><span style="color:#f59e0b;">Владелец</span></td>'
+        html += '</tr>'
+    html += '</table></div><div class="section"><h2>📝 Сообщения (модерация)</h2>'
+    for m in general:
+        msg_user = m.get('username','')
+        msg_text = m.get('text','')[:100]
+        msg_ts = str(m.get('timestamp',''))
+        html += f'<div class="msg-item"><b>@{html_escape(msg_user)}</b>: {html_escape(msg_text)} <button class="btn btn-sm" onclick="deleteMsg(\'{html_escape(msg_ts)}\')" style="float:right;">✕</button></div>'
+    html += '</div><script>function deleteUser(un){if(!confirm("Удалить @"+un+"?"))return;fetch("/admin/delete/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}function setRole(un,r){fetch("/admin/setrole/"+un+"/"+r,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}function deleteMsg(ts){fetch("/admin/deletemsg/"+ts,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()});}</script></body></html>'''
+    return html
 
-# ============================================================
-# ЗАПУСК
-# ============================================================
+@app.route('/admin/delete/<username>', methods=['POST'])
+def admin_delete_user(username):
+    if get_role(request.authorization.username.lower() if request.authorization else '') not in ['owner','admin']: 
+        return {'message':'Нет прав'}
+    un = username.lower()
+    users = load_users()
+    users.pop(un, None)
+    save_db('users', users)
+    return {'message': f'Пользователь @{un} удалён'}
+
+@app.route('/admin/setrole/<username>/<role>', methods=['POST'])
+def admin_set_role(username, role):
+    if get_role(request.authorization.username.lower() if request.authorization else '') not in ['owner','admin']: 
+        return {'message':'Нет прав'}
+    un = username.lower()
+    users = load_users()
+    if un in users:
+        users[un]['role'] = role
+        save_db('users', users)
+    return {'message': f'Роль @{un} изменена на {role}'}
+
+@app.route('/admin/deletemsg/<timestamp>', methods=['POST'])
+def admin_delete_msg(timestamp):
+    if get_role(request.authorization.username.lower() if request.authorization else '') not in ['owner','admin','moderator']: 
+        return {'message':'Нет прав'}
+    msgs = load_messages()
+    msgs = [m for m in msgs if str(m.get('timestamp')) != str(timestamp) and str(m.get('id')) != str(timestamp)]
+    save_db('messages', msgs)
+    return {'message': 'Сообщение удалено'}
+
+
+# ========== TELEGRAM ВЕРИФИКАЦИЯ ==========
+import random, json as json_lib, time as time_lib, os as os_lib
+
+PENDING_FILE = "/tmp/cat_data/pending_codes.json"
+
+@app.route('/api/verify/telegram', methods=['POST'])
+def api_verify_telegram():
+    try:
+        data = request.get_json()
+        un = data.get('username', '').lower()
+        tg = data.get('telegram', '').strip()
+        if not un or not tg:
+            return {'ok': False, 'error': 'Не указаны данные'}
+        users = load_users()
+        count = sum(1 for u in users.values() if u.get('telegram') == tg and u.get('telegram_verified'))
+        if count >= 2:
+            return {'ok': False, 'error': 'Этот Telegram уже привязан к двум аккаунтам CAT'}
+        code = str(random.randint(100000, 999999))
+        os_lib.makedirs(os_lib.path.dirname(PENDING_FILE), exist_ok=True)
+        if os_lib.exists(PENDING_FILE):
+            with open(PENDING_FILE, 'r') as f:
+                pending = json_lib.load(f)
+        else:
+            pending = {}
+        pending[un] = {'code': code, 'telegram': tg, 'expires': time_lib.time() + 600}
+        with open(PENDING_FILE, 'w') as f:
+            json_lib.dump(pending, f)
+        return {'ok': True, 'code': code}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+@app.route('/api/verify/check', methods=['POST'])
+def api_verify_check():
+    try:
+        data = request.get_json()
+        un = data.get('username', '').lower()
+        code = data.get('code', '').strip()
+        if not un or not code:
+            return {'ok': False, 'error': 'Не указаны данные'}
+        if not os_lib.exists(PENDING_FILE):
+            return {'ok': False, 'error': 'Код не найден. Запросите новый.'}
+        with open(PENDING_FILE, 'r') as f:
+            pending = json_lib.load(f)
+        entry = pending.get(un)
+        if not entry:
+            return {'ok': False, 'error': 'Код не найден. Запросите новый.'}
+        if time_lib.time() > entry['expires']:
+            del pending[un]
+            with open(PENDING_FILE, 'w') as f:
+                json_lib.dump(pending, f)
+            return {'ok': False, 'error': 'Срок действия кода истёк'}
+        if code != entry['code']:
+            return {'ok': False, 'error': 'Неверный код'}
+        users = load_users()
+        if un in users:
+            users[un]['telegram_verified'] = True
+            users[un]['telegram'] = entry['telegram']
+            save_db('users', users)
+        del pending[un]
+        with open(PENDING_FILE, 'w') as f:
+            json_lib.dump(pending, f)
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     socketio.run(app, host='0.0.0.0', port=port)
