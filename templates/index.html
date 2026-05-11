@@ -695,8 +695,6 @@
             <div id="roomList"></div>
             <div class="section-label">👥 Друзья</div>
             <div id="friendList"></div>
-            <div class="section-label">💬 Личные сообщения</div>
-            <div id="dmList"></div>
             <div class="section-label">👥 Группы</div>
             <div class="chat-item" onclick="showCreateGroup()" title="Создать группу" style="cursor:pointer;">
                 <div class="chat-avatar" style="background:var(--primary);color:white;">+</div>
@@ -851,7 +849,7 @@ function handleFileSelect(event) {
             if (parts.length >= 3) {
                 const other = parts[1] === myData.username ? parts[2] : parts[1];
                 dmActivity[currentRoom] = { username: other, display_name: myData.display_name, last_time: ts };
-                updateDMList();
+                updateFriendList();
             }
         } else if (currentRoom.startsWith('group_')) {
             groupActivity[currentRoom] = ts;
@@ -938,7 +936,6 @@ socket.on('auth_result', function(data) {
         updateMyInfo();
         updateBadge();
         updateFriendList();
-        updateDMList();
         if (isLogin) updateRoomList();
         socket.emit('get_groups', { username: myData.username });
     } else {
@@ -961,6 +958,11 @@ function updateMyInfo() {
 }
 
 // ========== ДРУЗЬЯ ==========
+function getDmKey(username) {
+    const sorted = [myData.username, username].sort();
+    return 'dm_' + sorted[0] + '_' + sorted[1];
+}
+
 function updateFriendList() {
     if (!myData) return;
     updateBadge();
@@ -994,7 +996,15 @@ function updateFriendList() {
         l.appendChild(item);
     });
 
-    (myData.friends || []).forEach(function(u) {
+    var sortedFriends = (myData.friends || []).slice().sort(function(a, b) {
+        var aKey = getDmKey(a);
+        var bKey = getDmKey(b);
+        var aTime = (dmActivity[aKey] && dmActivity[aKey].last_time) || 0;
+        var bTime = (dmActivity[bKey] && dmActivity[bKey].last_time) || 0;
+        return bTime - aTime;
+    });
+
+    sortedFriends.forEach(function(u) {
         const item = document.createElement('div');
         item.className = 'friend-item';
 
@@ -1160,32 +1170,6 @@ function updateRoomList() {
         div.onclick = function() { switchRoom(r.key); };
         div.innerHTML = '<div class="chat-avatar">' + r.icon + '</div><span>' + r.name + '</span>' +
             '<span class="unread-badge" id="unread_' + r.key + '"></span>';
-        list.appendChild(div);
-    });
-}
-
-// ========== ЛС (недавние) ==========
-function updateDMList() {
-    const list = document.getElementById('dmList');
-    list.innerHTML = '';
-    const entries = Object.entries(dmActivity).sort(function(a, b) { return b[1].last_time - a[1].last_time; });
-    if (entries.length === 0) {
-        list.innerHTML = '<div style="padding:8px 12px;color:var(--text-secondary);font-size:0.8rem;">Нет диалогов</div>';
-        return;
-    }
-    entries.forEach(function([room, data]) {
-        const div = document.createElement('div');
-        div.className = 'chat-item';
-        div.setAttribute('data-room', room);
-        div.onclick = function() {
-            const parts = room.split('_');
-            if (parts.length >= 3) {
-                const friend = parts[1] === myData.username ? parts[2] : parts[1];
-                startDM(friend);
-            }
-        };
-        div.innerHTML = '<div class="chat-avatar">💬</div><span>' + escapeHtml(data.display_name) + '</span>' +
-            '<span class="unread-badge" id="unread_' + room + '"></span>';
         list.appendChild(div);
     });
 }
@@ -1462,7 +1446,7 @@ function startDM(u) {
     const friendData = (myData.friends || []).find(function(f) { return typeof f === 'object' ? f.username === u : f === u; });
     const friendName = typeof friendData === 'object' ? (friendData.display_name || u) : u;
     dmActivity[room] = { username: u, display_name: friendName, last_time: Date.now() / 1000 };
-    updateDMList();
+    updateFriendList();
     switchRoom(room);
 }
 
@@ -1505,7 +1489,7 @@ function sendMsg() {
         if (parts.length >= 3) {
             const other = parts[1] === myData.username ? parts[2] : parts[1];
             dmActivity[currentRoom] = { username: other, display_name: myData.display_name, last_time: ts };
-            updateDMList();
+            updateFriendList();
         }
     } else if (currentRoom.startsWith('group_')) {
         groupActivity[currentRoom] = ts;
@@ -1686,7 +1670,7 @@ socket.on('message', function(m) {
         if (parts.length >= 3) {
             const other = parts[1] === myData.username ? parts[2] : parts[1];
             dmActivity[mr] = { username: other, display_name: m.user || other, last_time: ts };
-            updateDMList();
+            updateFriendList();
         }
     } else if (mr.startsWith('group_') && m.username !== myData.username) {
         groupActivity[mr] = ts;
@@ -1749,7 +1733,7 @@ socket.on('new_dm', function(data) {
     const room = data.room || '';
     if (room && data.from) {
         dmActivity[room] = { username: data.from, display_name: data.from, last_time: Date.now() / 1000 };
-        updateDMList();
+        updateFriendList();
     }
     if (!isDMOpen) {
         const notif = { type: 'new_message', from: data.from, text: data.text, timestamp: Date.now() / 1000, read: false };
