@@ -965,6 +965,7 @@ function updateFriendList() {
         const statusSpan = document.createElement('span');
         statusSpan.id = 'status_' + u;
         statusSpan.style.cssText = 'display:block;font-size:0.65rem;color:var(--text-secondary);';
+        statusSpan.innerHTML = '<span class="mini-dot offline"></span>Оффлайн';
 
         nameSpan.appendChild(nameStrong);
         nameSpan.appendChild(statusSpan);
