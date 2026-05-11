@@ -275,6 +275,8 @@
         .mini-dot.online { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
         .mini-dot.offline { background: #64748b; }
         .mini-dot.idle { background: #eab308; box-shadow: 0 0 6px rgba(234,179,8,0.4); }
+        .friend-status-dot.online { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+        .friend-status-dot.offline { background: #64748b; }
         .profile-avatar-url-btn {
             position: absolute;
             bottom: -2px;
@@ -935,6 +937,9 @@ function updateFriendList() {
         const item = document.createElement('div');
         item.className = 'friend-item';
 
+        const avatarWrap = document.createElement('div');
+        avatarWrap.style.cssText = 'position:relative;width:38px;height:38px;flex-shrink:0;';
+
         const img = document.createElement('img');
         img.className = 'chat-avatar friend-avatar-' + u;
         img.style.cssText = 'object-fit:cover;border-radius:12px;width:38px;height:38px;';
@@ -947,6 +952,14 @@ function updateFriendList() {
         img.addEventListener('error', function() {
             this.style.display = 'none';
         });
+
+        const friendDot = document.createElement('span');
+        friendDot.id = 'friendDot_' + u;
+        friendDot.className = 'friend-status-dot offline';
+        friendDot.style.cssText = 'position:absolute;bottom:1px;right:1px;width:12px;height:12px;border-radius:50%;border:2px solid #1e1e2f;';
+
+        avatarWrap.appendChild(img);
+        avatarWrap.appendChild(friendDot);
 
         const fallbackAv = document.createElement('div');
         fallbackAv.className = 'chat-avatar';
@@ -983,7 +996,7 @@ function updateFriendList() {
             removeFriend(u);
         });
 
-        item.appendChild(img);
+        item.appendChild(avatarWrap);
         item.appendChild(fallbackAv);
         item.appendChild(nameSpan);
         item.appendChild(removeBtn);
@@ -1071,6 +1084,13 @@ socket.on('friend_online', function(d) {
     if (s) s.innerHTML = d.online
         ? '<span class="mini-dot online"></span>Онлайн'
         : '<span class="mini-dot offline"></span>Оффлайн';
+    const dot = document.getElementById('friendDot_' + d.username);
+    if (dot) {
+        dot.className = 'friend-status-dot ' + (d.online ? 'online' : 'offline');
+        dot.style.background = d.online ? '#22c55e' : '#64748b';
+        if (d.online) dot.style.boxShadow = '0 0 6px rgba(34,197,94,0.5)';
+        else dot.style.boxShadow = 'none';
+    }
 });
 
 socket.on('friend_avatar', function(d) {
