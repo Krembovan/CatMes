@@ -250,10 +250,35 @@
             cursor: pointer;
         }
         .edit-mode .profile-avatar-container:hover .profile-avatar-overlay { opacity: 1; }
+        .status-dot {
+            position: absolute;
+            bottom: 4px;
+            right: 4px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 3px solid #161b22;
+            z-index: 2;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        .status-dot.online { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+        .status-dot.offline { background: #64748b; }
+        .status-dot.idle { background: #eab308; box-shadow: 0 0 8px rgba(234,179,8,0.4); }
+        .mini-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            vertical-align: middle;
+            margin-right: 4px;
+        }
+        .mini-dot.online { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+        .mini-dot.offline { background: #64748b; }
+        .mini-dot.idle { background: #eab308; box-shadow: 0 0 6px rgba(234,179,8,0.4); }
         .profile-avatar-url-btn {
             position: absolute;
             bottom: -2px;
-            right: -2px;
+            left: -2px;
             width: 28px;
             height: 28px;
             background: #2d3748;
@@ -277,7 +302,6 @@
         .profile-display-name { font-weight: 700; font-size: 1.3rem; }
         .profile-handle { color: #94a3b8; font-size: 0.9rem; }
         .profile-status { font-size: 0.85rem; margin-top: 5px; }
-        .online-dot { color: #22c55e; }
         .role {
             font-size: 0.8rem;
             font-weight: 600;
@@ -510,6 +534,7 @@
         </div>
         <div class="profile-avatar-container" id="profileAvatarContainer">
             <img id="profileAvatar" class="profile-avatar-img" src="" alt="Аватар">
+            <span class="status-dot" id="profileStatusDot"></span>
             <div class="profile-avatar-overlay">📷 Загрузить фото</div>
             <div class="profile-avatar-url-btn" id="avatarUrlBtn" title="Указать URL">🔗</div>
             <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
@@ -523,7 +548,7 @@
                 <div class="profile-display-name" id="profileDisplayName"></div>
                 <div class="profile-handle" id="profileHandle">@username</div>
                 <div class="profile-status">
-                    <span id="profileFriendsCount">0 друзей</span> · <span class="online-dot">🟢</span> онлайн
+                    <span id="profileFriendsCount">0 друзей</span> · <span class="mini-dot" id="profileMiniDot"></span><span id="profileStatusText">онлайн</span>
                 </div>
                 <div id="profileRole"></div>
                 <div class="profile-birthday-view" id="profileBirthdayView"></div>
@@ -1042,7 +1067,9 @@ socket.on('friend_removed_notify', function(d) {
 
 socket.on('friend_online', function(d) {
     const s = document.getElementById('status_' + d.username);
-    if (s) s.textContent = d.online ? '🟢 Онлайн' : '⚫ Оффлайн';
+    if (s) s.innerHTML = d.online
+        ? '<span class="mini-dot online"></span>Онлайн'
+        : '<span class="mini-dot offline"></span>Оффлайн';
 });
 
 socket.on('friend_avatar', function(d) {
@@ -1647,6 +1674,19 @@ function updateProfileUI(user, isOwner) {
     document.getElementById('profileAvatar').src = safeAvatarUrl(user.avatar, user.username);
     document.getElementById('profileDisplayName').textContent = user.display_name || user.username || 'User';
     document.getElementById('profileHandle').textContent = '@' + user.username;
+    const isOnline = user.online || false;
+    const dot = document.getElementById('profileStatusDot');
+    const miniDot = document.getElementById('profileMiniDot');
+    const statusText = document.getElementById('profileStatusText');
+    if (isOnline) {
+        dot.className = 'status-dot online';
+        miniDot.className = 'mini-dot online';
+        statusText.textContent = 'онлайн';
+    } else {
+        dot.className = 'status-dot offline';
+        miniDot.className = 'mini-dot offline';
+        statusText.textContent = 'офлайн';
+    }
     document.getElementById('profileFriendsCount').textContent = (user.friends ? user.friends.length : 0) + ' друзей';
     const roleEl = document.getElementById('profileRole');
     roleEl.innerHTML = '';
