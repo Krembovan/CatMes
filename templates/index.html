@@ -1595,11 +1595,14 @@ function requestTelegramCode() {
         btn.disabled = false;
         btn.textContent = '📨 Получить код';
         if (d.ok) {
-            // Показываем код и инструкцию
-            document.getElementById('telegramCodeDisplay').textContent = d.code;
-            document.getElementById('telegramCodeDisplay').style.display = 'block';
-            document.getElementById('tgInstructions').style.display = 'block';
-            showToast('Код сгенерирован! Отправьте его боту @CatVerifyBot', 'info');
+            if (d.sent) {
+                showToast(d.message || 'Код отправлен в Telegram!', 'success');
+            } else {
+                document.getElementById('telegramCodeDisplay').textContent = d.code;
+                document.getElementById('telegramCodeDisplay').style.display = 'block';
+                document.getElementById('tgInstructions').style.display = 'block';
+                showToast(d.message || 'Напиши боту @CatVerifyBot /start', 'info');
+            }
         } else {
             showToast(d.error || 'Ошибка', 'error');
         }

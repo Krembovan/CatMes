@@ -619,8 +619,27 @@ def admin_delete_msg(timestamp):
 
 # ========== TELEGRAM ВЕРИФИКАЦИЯ ==========
 import random, json as json_lib, time as time_lib, os as os_lib
+import urllib.request, urllib.parse
 
+BOT_TOKEN = os.environ.get('CAT_BOT_TOKEN', '')
+BOT_API = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
 PENDING_FILE = os.path.join(DATA_DIR, "pending_codes.json")
+
+def tg_send_code(tg_username, code):
+    if not BOT_TOKEN:
+        return False
+    try:
+        data = urllib.parse.urlencode({
+            'chat_id': f'@{tg_username.strip("@")}',
+            'text': f'Код CAT: {code}\nВведи его на сайте для верификации.',
+            'parse_mode': 'HTML'
+        }).encode()
+        req = urllib.request.Request(BOT_API, data=data, method='POST')
+        resp = urllib.request.urlopen(req, timeout=10)
+        return json.loads(resp.read()).get('ok', False)
+    except Exception as e:
+        print(f"[tg_send_code] Ошибка: {e}")
+        return False
 
 @app.route('/api/verify/telegram', methods=['POST'])
 def api_verify_telegram():
@@ -630,6 +649,8 @@ def api_verify_telegram():
         tg = data.get('telegram', '').strip()
         if not un or not tg:
             return {'ok': False, 'error': 'Не указаны данные'}
+        if not BOT_TOKEN:
+            return {'ok': False, 'error': 'Бот не настроен на сервере'}
         users = load_users()
         count = sum(1 for u in users.values() if u.get('telegram') == tg and u.get('telegram_verified'))
         if count >= 2:
@@ -644,7 +665,12 @@ def api_verify_telegram():
         pending[un] = {'code': code, 'telegram': tg, 'expires': time_lib.time() + 600}
         with open(PENDING_FILE, 'w') as f:
             json_lib.dump(pending, f)
-        return {'ok': True, 'code': code}
+
+        sent = tg_send_code(tg, code)
+        if sent:
+            return {'ok': True, 'sent': True, 'message': 'Код отправлен в Telegram!'}
+        return {'ok': True, 'sent': False, 'code': code,
+                'message': 'Не удалось отправить код. Напиши боту @CatVerifyBot /start и нажми "Получить код" снова.'}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
 
