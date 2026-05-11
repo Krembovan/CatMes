@@ -672,7 +672,7 @@ def handle_invite_to_group(data):
     groups = load_groups()
     group = groups.get(gid)
     if not group or user != group['creator']:
-        emit('error_msg', {'text': 'Только создатель может приглашать'})
+        emit('error_msg', {'text': 'Только создатель может добавлять'})
         return
     if target in group['members']:
         emit('error_msg', {'text': 'Уже в группе'})

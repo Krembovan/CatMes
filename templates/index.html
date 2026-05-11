@@ -713,7 +713,7 @@
             <span id="chatHeader">CAT</span>
             <span id="groupActions" style="display:none;margin-left:auto;gap:8px;">
                 <button class="icon-btn" id="groupMembersBtn" onclick="showGroupMembers()" title="Участники">👥</button>
-                <button class="icon-btn" id="groupInviteBtn" onclick="showGroupInvite()" title="Пригласить">➕</button>
+                <button class="icon-btn" id="groupAddBtn" onclick="showGroupAdd()" title="Добавить">➕</button>
                 <button class="icon-btn" id="groupLeaveBtn" onclick="leaveCurrentGroup()" title="Покинуть группу">🚪</button>
             </span>
         </div>
@@ -1170,35 +1170,36 @@ function showCreateGroup() {
     }
 }
 
-function showGroupInvite() {
+function showGroupAdd() {
     if (!currentGroupId) return;
     const group = groupsData[currentGroupId];
     if (!group) return;
     if (group.creator !== myData.username) {
-        showToast('Только создатель может приглашать', 'error');
+        showToast('Только создатель может добавлять', 'error');
         return;
     }
     const friends = myData.friends || [];
     const notInGroup = friends.filter(function(f) { return !group.members.includes(f); });
     if (notInGroup.length === 0) {
-        showToast('Некого приглашать — все друзья уже в группе', 'error');
+        showToast('Некого добавлять — все друзья уже в группе', 'error');
         return;
     }
-    let html = '<div style="padding:5px"><h3>Пригласить в «' + escapeHtml(group.name) + '»</h3>';
+    let html = '<h3 style="text-align:center;margin:0 0 15px;">Добавить в «' + escapeHtml(group.name) + '»</h3>';
+    html += '<div style="max-height:300px;overflow-y:auto;">';
     notInGroup.forEach(function(f) {
-        html += '<div class="friend-item" onclick="inviteToGroup(\'' + f + '\')" style="cursor:pointer;padding:8px;border-bottom:1px solid var(--border);">👤 @' + f + '</div>';
+        html += '<div class="friend-item" onclick="addToGroup(\'' + f + '\')" style="cursor:pointer;padding:10px 12px;border-radius:8px;margin:2px 0;">👤 <span style="font-weight:500;">' + escapeHtml(f) + '</span></div>';
     });
     html += '</div>';
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
     modal.style.position = 'fixed';
-    modal.innerHTML = '<div class="modal" style="max-width:350px;">' + html + '<button class="btn" onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:10px;width:100%;">Закрыть</button></div>';
+    modal.innerHTML = '<div class="modal" style="max-width:350px;padding:20px;">' + html + '<button class="btn btn-primary" onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:15px;width:100%;">Закрыть</button></div>';
     document.body.appendChild(modal);
 }
 
-function inviteToGroup(username) {
+function addToGroup(username) {
     socket.emit('invite_to_group', { username: myData.username, group_id: currentGroupId, target: username });
-    showToast('Приглашение отправлено @' + username, 'success');
+    showToast('@' + username + ' добавлен в группу', 'success');
     document.querySelector('.modal-overlay.active')?.remove();
 }
 
@@ -1691,7 +1692,7 @@ socket.on('invited_to_group', function(data) {
     const g = data.group;
     groupsData[g.id] = g;
     updateGroupList();
-    showToast('Вас пригласили в группу «' + g.name + '»', 'info');
+    showToast('Вас добавили в группу «' + g.name + '»', 'info');
     socket.emit('join', { room: g.id });
 });
 
@@ -1721,18 +1722,19 @@ socket.on('group_members', function(data) {
     if (!data || data.group_id !== currentGroupId) return;
     const group = groupsData[data.group_id];
     if (!group) return;
-    let html = '<div style="padding:5px"><h3>👥 ' + escapeHtml(group.name) + ' — участники</h3>';
+    let html = '<h3 style="text-align:center;margin:0 0 15px;">👥 ' + escapeHtml(group.name) + '</h3>';
+    html += '<div style="max-height:300px;overflow-y:auto;">';
     data.members.forEach(function(m) {
         const online = m.online ? '🟢' : '⚫';
-        html += '<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
-            '<img src="' + safeAvatarUrl(m.avatar, m.username) + '" style="width:28px;height:28px;border-radius:50%;">' +
-            online + ' <span>' + escapeHtml(m.display_name) + '</span> <span style="color:var(--text-secondary);font-size:0.8rem;">@' + m.username + '</span></div>';
+        html += '<div style="padding:8px 10px;margin:2px 0;border-radius:8px;display:flex;align-items:center;gap:10px;">' +
+            '<img src="' + safeAvatarUrl(m.avatar, m.username) + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">' +
+            online + ' <span style="font-weight:500;">' + escapeHtml(m.display_name) + '</span> <span style="color:var(--text-secondary);font-size:0.8rem;">@' + m.username + '</span></div>';
     });
     html += '</div>';
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
     modal.style.position = 'fixed';
-    modal.innerHTML = '<div class="modal" style="max-width:350px;">' + html + '<button class="btn" onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:10px;width:100%;">Закрыть</button></div>';
+    modal.innerHTML = '<div class="modal" style="max-width:350px;padding:20px;">' + html + '<button class="btn btn-primary" onclick="this.closest(\'.modal-overlay\').remove()" style="margin-top:15px;width:100%;">Закрыть</button></div>';
     document.body.appendChild(modal);
 });
 
