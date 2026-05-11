@@ -1698,16 +1698,16 @@ socket.on('profile_updated', function(data) {
 });
 
 function getLevel(xp) {
-    if (xp < 100) return 1;
-    if (xp < 300) return 2;
-    if (xp < 600) return 3;
-    if (xp < 1000) return 4;
-    if (xp < 1500) return 5;
-    if (xp < 2100) return 6;
+    if (xp < 50) return 1;
+    if (xp < 150) return 2;
+    if (xp < 300) return 3;
+    if (xp < 500) return 4;
+    if (xp < 750) return 5;
+    if (xp < 1050) return 6;
     return 7;
 }
 function getNextLevelXp(level) {
-    return [0, 100, 300, 600, 1000, 1500, 2100][level] || 2100;
+    return [0, 50, 150, 300, 500, 750, 1050][level] || 1050;
 }
 function getLevelXp(level) {
     return level === 1 ? 0 : getNextLevelXp(level - 1);
