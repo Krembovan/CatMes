@@ -277,8 +277,8 @@
         .mini-dot.idle { background: #eab308; box-shadow: 0 0 6px rgba(234,179,8,0.4); }
         .friend-status-dot {
             position: absolute;
-            bottom: 1px;
-            right: 1px;
+            bottom: 0px;
+            right: 0px;
             width: 12px;
             height: 12px;
             border-radius: 50%;
@@ -984,13 +984,7 @@ function updateFriendList() {
         nameStrong.style.fontWeight = '600';
         nameStrong.textContent = '@' + u;
 
-        const statusSpan = document.createElement('span');
-        statusSpan.id = 'status_' + u;
-        statusSpan.style.cssText = 'display:block;font-size:0.65rem;color:var(--text-secondary);';
-        statusSpan.innerHTML = '<span class="mini-dot offline"></span>Оффлайн';
-
         nameSpan.appendChild(nameStrong);
-        nameSpan.appendChild(statusSpan);
 
         const dmBadge = document.createElement('span');
         dmBadge.id = 'unread_dm_' + u;
@@ -1089,10 +1083,6 @@ socket.on('friend_removed_notify', function(d) {
 });
 
 socket.on('friend_online', function(d) {
-    const s = document.getElementById('status_' + d.username);
-    if (s) s.innerHTML = d.online
-        ? '<span class="mini-dot online"></span>Онлайн'
-        : '<span class="mini-dot offline"></span>Оффлайн';
     const dot = document.getElementById('friendDot_' + d.username);
     if (dot) dot.className = 'friend-status-dot ' + (d.online ? 'online' : 'offline');
 });
