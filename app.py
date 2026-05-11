@@ -627,16 +627,21 @@ PENDING_FILE = os.path.join(DATA_DIR, "pending_codes.json")
 
 def tg_send_code(tg_username, code):
     if not BOT_TOKEN:
+        print("[tg_send_code] BOT_TOKEN не задан")
         return False
     try:
+        chat_id = f'@{tg_username.strip("@")}'
+        print(f"[tg_send_code] Отправка {code} на {chat_id}")
         data = urllib.parse.urlencode({
-            'chat_id': f'@{tg_username.strip("@")}',
+            'chat_id': chat_id,
             'text': f'Код CAT: {code}\nВведи его на сайте для верификации.',
             'parse_mode': 'HTML'
         }).encode()
         req = urllib.request.Request(BOT_API, data=data, method='POST')
         resp = urllib.request.urlopen(req, timeout=10)
-        return json.loads(resp.read()).get('ok', False)
+        result = json.loads(resp.read())
+        print(f"[tg_send_code] Ответ: {result}")
+        return result.get('ok', False)
     except Exception as e:
         print(f"[tg_send_code] Ошибка: {e}")
         return False
