@@ -1261,16 +1261,29 @@ function createFolder() {
 }
 
 function deleteFolder(fid) {
-    if (!confirm('Удалить папку "' + folders[fid].name + '"? Чаты останутся.')) return;
-    delete folders[fid];
-    saveFolders();
-    if (activeFolder === fid) { activeFolder = 'all'; }
-    updateFolderTabs();
-    updateRoomList();
-    updateFriendList();
-    updateGroupList();
+    var fname = folders[fid].name;
     document.querySelector('.modal-overlay.active')?.remove();
-    showFolderManager();
+    var html = '<h3 style="text-align:center;margin:0 0 15px;">Удалить папку?</h3>' +
+        '<p style="text-align:center;color:var(--text-secondary);margin:0 0 15px;">«' + escapeHtml(fname) + '»<br>Чаты останутся в общем списке</p>' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button class="btn-secondary" onclick="this.closest(\'.modal-overlay\').remove()" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:600;cursor:pointer;">Отмена</button>' +
+        '<button class="btn btn-danger" id="deleteFolderConfirmBtn" style="flex:1;padding:10px;border-radius:10px;background:var(--danger);color:white;border:none;">Удалить</button></div>';
+    var modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.style.position = 'fixed';
+    modal.innerHTML = '<div class="modal" style="max-width:320px;padding:20px;">' + html + '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('deleteFolderConfirmBtn').addEventListener('click', function() {
+        delete folders[fid];
+        saveFolders();
+        if (activeFolder === fid) { activeFolder = 'all'; }
+        updateFolderTabs();
+        updateRoomList();
+        updateFriendList();
+        updateGroupList();
+        document.querySelector('.modal-overlay.active')?.remove();
+        showFolderManager();
+    });
 }
 
 function addChatsToFolder(fid) {
@@ -1394,10 +1407,26 @@ function updateGroupList() {
 }
 
 function showCreateGroup() {
-    const name = prompt('Название новой группы:');
-    if (name && name.trim()) {
-        socket.emit('create_group', { username: myData.username, name: name.trim() });
-    }
+    var html = '<h3 style="text-align:center;margin:0 0 15px;">👥 Новая группа</h3>' +
+        '<input type="text" id="groupNameInput" placeholder="Название группы" maxlength="50" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:1rem;box-sizing:border-box;outline:none;" autofocus>' +
+        '<div style="display:flex;gap:8px;margin-top:15px;">' +
+        '<button class="btn-secondary" onclick="this.closest(\'.modal-overlay\').remove()" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:600;cursor:pointer;">Отмена</button>' +
+        '<button class="btn btn-primary" id="createGroupConfirmBtn" style="flex:1;padding:10px;border-radius:10px;">Создать</button></div>';
+    var modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.style.position = 'fixed';
+    modal.innerHTML = '<div class="modal" style="max-width:320px;padding:20px;">' + html + '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('groupNameInput').focus();
+    document.getElementById('createGroupConfirmBtn').addEventListener('click', function() {
+        var name = document.getElementById('groupNameInput').value.trim();
+        if (!name) { showToast('Введите название', 'error'); return; }
+        socket.emit('create_group', { username: myData.username, name: name });
+        document.querySelector('.modal-overlay.active')?.remove();
+    });
+    document.getElementById('groupNameInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { document.getElementById('createGroupConfirmBtn').click(); }
+    });
 }
 
 function showGroupAdd() {
@@ -1442,8 +1471,21 @@ function showGroupMembers() {
 
 function leaveCurrentGroup() {
     if (!currentGroupId) return;
-    if (!confirm('Покинуть группу?')) return;
-    socket.emit('leave_group', { username: myData.username, group_id: currentGroupId });
+    var gname = groupsData[currentGroupId] ? groupsData[currentGroupId].name : 'эту группу';
+    var html = '<h3 style="text-align:center;margin:0 0 15px;">Покинуть группу?</h3>' +
+        '<p style="text-align:center;color:var(--text-secondary);margin:0 0 15px;">«' + escapeHtml(gname) + '»</p>' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button class="btn-secondary" onclick="this.closest(\'.modal-overlay\').remove()" style="flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:600;cursor:pointer;">Остаться</button>' +
+        '<button class="btn btn-danger" id="leaveGroupConfirmBtn" style="flex:1;padding:10px;border-radius:10px;background:var(--danger);color:white;border:none;">Выйти</button></div>';
+    var modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.style.position = 'fixed';
+    modal.innerHTML = '<div class="modal" style="max-width:320px;padding:20px;">' + html + '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('leaveGroupConfirmBtn').addEventListener('click', function() {
+        socket.emit('leave_group', { username: myData.username, group_id: currentGroupId });
+        document.querySelector('.modal-overlay.active')?.remove();
+    });
 }
 
 function escapeHtml(s) {
