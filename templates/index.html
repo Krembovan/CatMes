@@ -26,15 +26,16 @@
         .icon-btn:hover { background: var(--primary); border-color: var(--primary); }
         .badge-count { position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; font-size: 0.6rem; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; display: none; }
         .badge-count.show { display: flex; }
-        .folder-tabs { display: flex; gap: 4px; padding: 8px 12px; overflow-x: auto; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-        .folder-tabs::-webkit-scrollbar { height: 3px; }
-        .folder-tabs::-webkit-scrollbar-track { background: transparent; }
-        .folder-tabs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-        .folder-tab { padding: 5px 12px; border-radius: 10px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); transition: 0.2s; }
-        .folder-tab:hover { color: var(--text); border-color: var(--primary); }
-        .folder-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
-        .folder-tab-add { padding: 5px 8px; border-radius: 10px; font-size: 0.9rem; cursor: pointer; color: var(--text-secondary); background: transparent; border: 1px dashed var(--border); transition: 0.2s; flex-shrink: 0; }
-        .folder-tab-add:hover { color: var(--primary); border-color: var(--primary); }
+        .sidebar-body { display: flex; flex: 1; min-height: 0; }
+        .folder-panel { width: 60px; background: var(--bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; overflow-y: auto; flex-shrink: 0; }
+        .folder-panel::-webkit-scrollbar { width: 2px; }
+        .folder-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
+        .folder-pnl-item { width: 44px; height: 44px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 1.1rem; cursor: pointer; transition: 0.2s; color: var(--text-secondary); background: transparent; border: none; flex-shrink: 0; gap: 0; }
+        .folder-pnl-item:hover { background: var(--surface); }
+        .folder-pnl-item.active { background: var(--primary); color: white; }
+        .folder-pnl-item-label { font-size: 0.55rem; font-weight: 600; line-height: 1; max-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+        .folder-pnl-add { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; cursor: pointer; color: var(--text-secondary); background: transparent; border: 1px dashed var(--border); transition: 0.2s; flex-shrink: 0; margin-top: 4px; }
+        .folder-pnl-add:hover { color: var(--primary); border-color: var(--primary); }
         .sidebar-nav { flex: 1; overflow-y: auto; padding: 15px; }
         .section-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--text-secondary); padding: 15px 12px 8px; }
         .chat-item, .friend-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; cursor: pointer; transition: 0.2s; color: var(--text-secondary); font-size: 0.9rem; }
@@ -699,7 +700,8 @@
                 <div class="icon-btn" onclick="openModal('profileOverlay'); loadProfile();">👤</div>
             </div>
         </div>
-        <div class="folder-tabs" id="folderTabs"></div>
+        <div class="sidebar-body">
+        <div class="folder-panel" id="folderPanel"></div>
         <div class="sidebar-nav">
             <div id="roomList"></div>
             <div id="sep1" style="border-top:1px solid var(--border);margin:4px 0;display:none;"></div>
@@ -710,6 +712,7 @@
             <div id="groupList"></div>
             <div id="sep2" style="border-top:1px solid var(--border);margin:4px 0;display:none;"></div>
             <div id="friendList"></div>
+        </div>
         </div>
         <div class="profile-mini" onclick="openModal('profileOverlay'); loadProfile();">
             <img id="myAvatar" class="avatar-mini" src="" alt="Аватар">
@@ -949,7 +952,7 @@ socket.on('auth_result', function(data) {
         updateFriendList();
         if (isLogin) updateRoomList();
         loadFolders();
-        updateFolderTabs();
+        updateFolderPanel();
         socket.emit('get_groups', { username: myData.username });
     } else {
         if (document.getElementById('registerForm').style.display === 'block') {
@@ -1194,23 +1197,35 @@ const SYSTEM_FOLDERS = {
     'groups': { name: '👥 Группы' }
 };
 
-function updateFolderTabs() {
-    const tabs = document.getElementById('folderTabs');
-    if (!tabs) return;
+function updateFolderPanel() {
+    const panel = document.getElementById('folderPanel');
+    if (!panel) return;
     let html = '';
     Object.keys(SYSTEM_FOLDERS).forEach(function(fid) {
-        html += '<div class="folder-tab' + (activeFolder === fid ? ' active' : '') + '" onclick="switchFolder(\'' + fid + '\')">' + SYSTEM_FOLDERS[fid].name + '</div>';
+        var active = activeFolder === fid ? ' active' : '';
+        var label = SYSTEM_FOLDERS[fid].name;
+        var icon = label.split(' ')[0];
+        var text = label.split(' ')[1] || '';
+        html += '<div class="folder-pnl-item' + active + '" onclick="switchFolder(\'' + fid + '\')" title="' + label + '">' +
+            '<span>' + icon + '</span>' +
+            '<span class="folder-pnl-item-label">' + text + '</span></div>';
     });
     Object.keys(folders).forEach(function(fid) {
-        html += '<div class="folder-tab' + (activeFolder === fid ? ' active' : '') + '" onclick="switchFolder(\'' + fid + '\')">' + escapeHtml(folders[fid].name) + '</div>';
+        var active = activeFolder === fid ? ' active' : '';
+        var fname = folders[fid].name;
+        var icon = fname.match(/^(\p{Emoji}|.)/u) ? fname.match(/^(\p{Emoji}|.)/u)[1] : '📁';
+        var text = fname.replace(/^\p{Emoji}\s*/u, '').substring(0, 6);
+        html += '<div class="folder-pnl-item' + active + '" onclick="switchFolder(\'' + fid + '\')" title="' + escapeHtml(fname) + '">' +
+            '<span>' + icon + '</span>' +
+            '<span class="folder-pnl-item-label">' + escapeHtml(text) + '</span></div>';
     });
-    html += '<div class="folder-tab-add" onclick="showFolderManager()" title="Управлять папками">+</div>';
-    tabs.innerHTML = html;
+    html += '<div class="folder-pnl-add" onclick="showFolderManager()" title="Управлять папками">+</div>';
+    panel.innerHTML = html;
 }
 
 function switchFolder(fid) {
     activeFolder = fid;
-    updateFolderTabs();
+    updateFolderPanel();
     updateRoomList();
     updateFriendList();
     updateGroupList();
@@ -1272,7 +1287,7 @@ function createFolder() {
         var fid = 'folder_' + Date.now();
         folders[fid] = { id: fid, name: name, chats: [] };
         saveFolders();
-        updateFolderTabs();
+        updateFolderPanel();
         document.querySelector('.modal-overlay.active')?.remove();
         showFolderManager();
     });
@@ -1298,7 +1313,7 @@ function deleteFolder(fid) {
         delete folders[fid];
         saveFolders();
         if (activeFolder === fid) { activeFolder = 'all'; }
-        updateFolderTabs();
+        updateFolderPanel();
         updateRoomList();
         updateFriendList();
         updateGroupList();
@@ -1395,13 +1410,11 @@ function toggleSections() {
 }
 
 setTimeout(function() {
-    var ft = document.getElementById('folderTabs');
-    if (ft) {
-        ft.addEventListener('wheel', function(e) {
-            if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                this.scrollLeft += e.deltaY;
-                e.preventDefault();
-            }
+    var fp = document.getElementById('folderPanel');
+    if (fp) {
+        fp.addEventListener('wheel', function(e) {
+            this.scrollTop += e.deltaY;
+            e.preventDefault();
         }, { passive: false });
     }
 }, 100);
