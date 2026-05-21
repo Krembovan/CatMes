@@ -1,13 +1,13 @@
 import eventlet
 eventlet.monkey_patch()
 
-import json, os, time, hashlib, secrets, base64, uuid
-from flask import Flask, request, render_template, send_from_directory
+import json, os, time, hashlib, secrets, base64, uuid, functools
+from flask import Flask, request, render_template, send_from_directory, make_response, session, redirect, url_for
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('CAT_SECRET_KEY', os.urandom(32).hex())
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="https://catmes.ru", async_mode='eventlet')
 
 DATA_DIR = os.environ.get('CAT_DATA_DIR', '/tmp/cat_data')
 UPLOADS_DIR = os.path.join(DATA_DIR, 'uploads')
@@ -96,7 +96,11 @@ def notify_friends(username, event, data):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    resp = make_response(render_template('index.html'))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 @app.route('/static/<path:filename>')
 def static_files(filename):
@@ -218,7 +222,14 @@ def handle_auth(data):
         if un not in users:
             emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
             return
-        if not verify_password(pwd, users[un]['pass']):
+        stored_pass = users[un].get('pass', '')
+        if stored_pass == 'RESET_NEEDED':
+            emit('auth_result', {'success': False, 'error': 'Внимание! Ваш пароль был утерян, пожалуйста, свяжитесь с администрацией и укажите, что желаете сбросить пароль.'})
+            return
+        if stored_pass == 'MUST_CHANGE':
+            emit('auth_result', {'success': False, 'error': 'Требуется смена пароля. Используйте код сброса.'})
+            return
+        if not verify_password(pwd, stored_pass):
             emit('auth_result', {'success': False, 'error': 'Неверный пароль'})
             return
 
@@ -595,6 +606,67 @@ def handle_get_avatar(data):
     if un in users:
         emit('friend_avatar', {'username': un, 'avatar': users[un].get('avatar', '')})
 
+@socketio.on('reset_login')
+def handle_reset_login(data):
+    code = data.get('code', '').strip().upper().replace('-', '')
+    codes = load_reset_codes()
+    if code not in codes:
+        emit('auth_result', {'success': False, 'error': 'Неверный или истёкший код сброса'})
+        return
+    entry = codes[code]
+    if entry.get('used'):
+        emit('auth_result', {'success': False, 'error': 'Код уже использован'})
+        return
+    if entry.get('expires_at', 0) < time.time():
+        emit('auth_result', {'success': False, 'error': 'Срок действия кода истёк'})
+        return
+    un = entry['username']
+    users = load_users()
+    if un not in users:
+        emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
+        return
+    users[un]['pass'] = 'MUST_CHANGE'
+    save_user(un, users[un])
+    codes[code]['used'] = True
+    save_reset_codes(codes)
+    user_sessions[un] = request.sid
+    users[un]['online'] = True
+    users[un]['last_seen'] = time.time()
+    save_user(un, users[un])
+    users[un].setdefault('achievements', [])
+    users[un].setdefault('xp', 0)
+    users[un]['role'] = get_role(un)
+    emit('auth_result', {'success': True, 'user': users[un], 'must_change_password': True})
+
+@socketio.on('force_change_password')
+def handle_force_change_password(data):
+    un = data.get('username', '').strip().lower()
+    pwd = data.get('password', '')
+    pwd2 = data.get('password2', '')
+    if not pwd or len(pwd) < 4:
+        emit('auth_result', {'success': False, 'error': 'Пароль: минимум 4 символа'})
+        return
+    if pwd != pwd2:
+        emit('auth_result', {'success': False, 'error': 'Пароли не совпадают'})
+        return
+    users = load_users()
+    if un not in users:
+        emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
+        return
+    if users[un].get('pass') != 'MUST_CHANGE':
+        emit('auth_result', {'success': False, 'error': 'Сброс пароля не требуется'})
+        return
+    users[un]['pass'] = hash_password(pwd)
+    save_user(un, users[un])
+    user_sessions[un] = request.sid
+    users[un]['online'] = True
+    users[un]['last_seen'] = time.time()
+    users[un].setdefault('achievements', [])
+    users[un].setdefault('xp', 0)
+    users[un]['role'] = get_role(un)
+    save_user(un, users[un])
+    emit('auth_result', {'success': True, 'user': users[un], 'password_changed': True})
+
 @socketio.on('disconnect')
 def handle_disconnect():
     users = load_users()
@@ -837,6 +909,18 @@ def admin_panel():
             status = f'<span style="color:#ef4444;">Использован @{html_escape(v["used_by"])}</span>' if v.get('used_by') else '<span style="color:#10b981;">Активен</span>'
             html += f'<tr><td style="font-family:monospace;font-weight:700;">{html_escape(c)}</td><td>@{html_escape(v.get("created_by","?"))}</td><td>{status}</td></tr>'
         html += '</table></div>'
+    if can_manage_invites:
+        reset_stub_users = [u for u, d in load_users().items() if d.get('pass') == 'RESET_NEEDED']
+        html += '<div class="section"><h2>🔐 Сброс пароля</h2>'
+        if reset_stub_users:
+            html += '<p style="color:#94a3b8;font-size:0.85rem;">Пользователям ниже требуется сброс пароля:</p>'
+            html += '<table><tr><th>Username</th><th>Действие</th></tr>'
+            for u in reset_stub_users:
+                html += '<tr><td>@' + html_escape(u) + '</td><td><button class="btn btn-sm" onclick="generateReset('' + html_escape(u) + '')" style="background:#f59e0b;color:#0d1117;">🔑 Сгенерировать код</button></td></tr>'
+            html += '</table>'
+        html += '<p style="margin-top:10px;"><input type="text" id="resetUsernameInput" placeholder="username" style="padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#0d1117;color:white;width:200px;"> <button class="btn btn-sm" onclick="generateReset(document.getElementById(\'resetUsernameInput\').value)" style="background:#f59e0b;color:#0d1117;">🔑 Сбросить пароль</button></p>'
+        html += '<div id="resetCodeDisplay" style="margin-top:10px;font-size:1.3rem;font-weight:900;color:#10b981;display:none;"></div>'
+        html += '</div>'
     html += '<script>'
     if can_manage_invites:
         html += 'function createInvite(){fetch("/api/invite/create",{method:"POST"}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById("newCodeDisplay").textContent="\\uD83C\\uDF89 "+d.code;document.getElementById("newCodeDisplay").style.display="block";setTimeout(()=>location.reload(),2000)}else{alert(d.error)}})}'
@@ -845,6 +929,7 @@ def admin_panel():
     html += 'function deleteMsg(ts){fetch("/admin/deletemsg/"+ts,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
     html += 'function addXp(un){var am=document.getElementById("xpInput-"+un).value;fetch("/admin/addxp/"+un+"/"+am,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
     html += 'function setLegendary(un){fetch("/admin/setlegendary/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
+    html += 'function generateReset(un){fetch("/admin/generate_reset/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{if(d.code){document.getElementById("resetCodeDisplay").textContent="\U0001F511 "+d.code;document.getElementById("resetCodeDisplay").style.display="block";setTimeout(()=>location.reload(),3000)}else{alert(d.error||"\u041e\u0448\u0438\u0431\u043a\u0430")}})}'
     html += '</script></body></html>'
     return html
 
@@ -941,6 +1026,30 @@ def admin_delete_msg(timestamp):
     return {'message': 'Сообщение удалено'}
 
 
+
+@app.route('/admin/generate_reset/<username>', methods=['POST'])
+def admin_generate_reset(username):
+    auth = request.authorization
+    if not auth:
+        return {'code': None, 'error': 'Требуется авторизация'}
+    requester_un = auth.username.lower()
+    requester_pw = auth.password
+    users = load_users()
+    if requester_un not in users or not verify_password(requester_pw, users[requester_un].get('pass', '')):
+        return {'code': None, 'error': 'Неверные данные авторизации'}
+    requester_role = get_role(requester_un)
+    if requester_role not in ['owner', 'admin']:
+        return {'code': None, 'error': 'Нет прав'}
+    un = username.lower().replace('@', '')
+    if un not in users:
+        return {'code': None, 'error': 'Пользователь не найден'}
+    code = secrets.token_hex(4).upper()
+    codes = load_reset_codes()
+    codes[code] = {'username': un, 'created_at': time.time(), 'expires_at': time.time() + 86400, 'used': False}
+    save_reset_codes(codes)
+    return {'code': code, 'error': None}
+
+
 # ========== ДОСТИЖЕНИЯ ==========
 ACHIEVEMENTS = {
     'first_msg': {'icon': '🐱', 'name': 'Первый мяу', 'desc': 'Отправить первое сообщение в чат', 'xp': 25},
@@ -996,6 +1105,22 @@ def check_daily_login(username):
     award_achievement(username, 'daily_login')
 
 # ========== ИНВАЙТ-КОДЫ ==========
+RESET_CODES_FILE = os.path.join(DATA_DIR, "reset_codes.json")
+
+def load_reset_codes():
+    if os.path.exists(RESET_CODES_FILE):
+        try:
+            with open(RESET_CODES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+def save_reset_codes(data):
+    with open(RESET_CODES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 INVITE_FILE = os.path.join(DATA_DIR, "invite_codes.json")
 
 def load_invites():

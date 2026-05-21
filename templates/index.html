@@ -539,7 +539,11 @@
             font-size: 0.85rem;
             margin-top: 2px;
         }
-    </style>
+    
+        .dropdown-item { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:8px; cursor:pointer; transition:0.15s; font-size:0.9rem; }
+        .dropdown-item:hover { background:rgba(255,255,255,0.06); }
+        .dropdown-icon { font-size:1.1rem; width:24px; text-align:center; }
+</style>
 </head>
 <body>
 
@@ -553,6 +557,7 @@
             <div class="input-group"><label>Пароль</label><input type="password" id="loginPass" placeholder="••••" autocomplete="current-password"></div>
             <button class="btn btn-primary" onclick="handleLogin()">Войти</button>
             <div class="modal-switch">Нет аккаунта? <a onclick="switchAuth('register')">Создать</a></div>
+            <div class="modal-switch" style="margin-top:5px;">Забыли пароль? <a onclick="switchAuth('reset')">Есть код сброса</a></div>
         </div>
         <div id="registerForm" style="display:none;">
             <div class="input-group"><label>Username</label><input type="text" id="regUser" placeholder="@username" value="@" oninput="if(!this.value.startsWith('@')) this.value = '@' + this.value.replace(/@/g, '');" autocomplete="username"></div>
@@ -563,6 +568,25 @@
             <button class="btn btn-primary" onclick="handleRegister()">Зарегистрироваться</button>
             <div class="modal-switch">Уже есть аккаунт? <a onclick="switchAuth('login')">Войти</a></div>
         </div>
+        <div id="resetCodeForm" style="display:none;">
+            <p style="color:#e2e8f0;font-size:0.85rem;margin:10px 0;">Введите код сброса, полученный от администрации:</p>
+            <div class="input-group"><label>Код сброса</label><input type="text" id="resetCodeInput" placeholder="XXXX-XXXX" style="text-transform:uppercase;font-family:monospace;letter-spacing:2px;" autocomplete="off"></div>
+            <div id="resetError" class="error-text"></div>
+            <button class="btn btn-primary" onclick="handleResetCode()">Войти по коду</button>
+            <div class="modal-switch"><a onclick="switchAuth('login')">Назад к входу</a></div>
+        </div>
+    </div>
+</div>
+
+<!-- Force Password Change Modal -->
+<div id="forcePasswordOverlay" class="modal-overlay">
+    <div class="modal">
+        <h2>🔒 Смена пароля</h2>
+        <p style="color:#e2e8f0;font-size:0.85rem;margin:10px 0;">Ваш пароль был сброшен. Пожалуйста, установите новый пароль для входа.</p>
+        <div id="fpError" class="error-text"></div>
+        <div class="input-group"><label>Новый пароль</label><input type="password" id="fpPass" placeholder="минимум 4 символа" autocomplete="new-password"></div>
+        <div class="input-group"><label>Повторите пароль</label><input type="password" id="fpPass2" placeholder="повторите пароль" autocomplete="new-password"></div>
+        <button class="btn btn-primary" onclick="handleForcePasswordChange()">Сохранить</button>
     </div>
 </div>
 
@@ -697,6 +721,7 @@
             <div class="header-btns">
                 <div class="icon-btn" onclick="toggleNotifPanel()">🔔<span class="badge-count" id="notifBadge"></span></div>
                 <div class="icon-btn" onclick="openFriendModal()">+</div>
+                <div class="icon-btn" onclick="showCreateMenu()" title="Создать">✏️</div>
                 <div class="icon-btn" onclick="openModal('profileOverlay'); loadProfile();">👤</div>
             </div>
         </div>
@@ -727,10 +752,19 @@
         <div class="chat-header">
             <span class="back-btn" onclick="goBack()">←</span>
             <span id="chatHeader">CAT</span>
-            <span id="groupActions" style="display:none;margin-left:auto;gap:8px;">
-                <button class="icon-btn" id="groupMembersBtn" onclick="showGroupMembers()" title="Участники">👥</button>
-                <button class="icon-btn" id="groupAddBtn" onclick="showGroupAdd()" title="Добавить">➕</button>
-                <button class="icon-btn" id="groupLeaveBtn" onclick="leaveCurrentGroup()" title="Покинуть группу">🚪</button>
+            <span id="groupActions" style="display:none;margin-left:auto;position:relative;">
+                <button class="icon-btn" id="groupMenuBtn" onclick="toggleGroupMenu()" title="Действия">⋮</button>
+                <div id="groupDropdown" class="dropdown-menu" style="display:none;position:absolute;top:100%;right:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px;min-width:200px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+                    <div class="dropdown-item" onclick="showGroupMembers(); closeGroupMenu();">
+                        <span class="dropdown-icon">ℹ️</span> Информация
+                    </div>
+                    <div class="dropdown-item" onclick="showGroupAdd(); closeGroupMenu();">
+                        <span class="dropdown-icon">➕</span> Добавить участника
+                    </div>
+                    <div class="dropdown-item" onclick="showEditGroup(); closeGroupMenu();">
+                        <span class="dropdown-icon">✏️</span> Редактировать
+                    </div>
+                </div>
             </span>
         </div>
         <div id="messages">
@@ -822,6 +856,15 @@ function closeModal(id) {
 }
 
 function switchAuth(mode) {
+    document.getElementById('authError').textContent = '';
+    document.getElementById('regError').textContent = '';
+    document.getElementById('resetError').textContent = '';
+    if (mode === 'reset') {
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('registerForm').style.display = 'none';
+        document.getElementById('resetCodeForm').style.display = 'block';
+        return;
+    }
     document.getElementById('loginForm').style.display = mode === 'login' ? 'block' : 'none';
     document.getElementById('registerForm').style.display = mode === 'register' ? 'block' : 'none';
     document.getElementById('authError').textContent = '';
@@ -901,6 +944,32 @@ function handleLogin() {
     socket.emit('auth', { action: 'login', username: u, password: p });
 }
 
+function handleResetCode() {
+    const code = document.getElementById('resetCodeInput').value.trim().toUpperCase();
+    document.getElementById('resetError').textContent = '';
+    if (!code) {
+        document.getElementById('resetError').textContent = 'Введите код сброса';
+        return;
+    }
+    socket.emit('reset_login', { code: code });
+}
+
+function handleForcePasswordChange() {
+    if (!myData) return;
+    const p = document.getElementById('fpPass').value;
+    const p2 = document.getElementById('fpPass2').value;
+    document.getElementById('fpError').textContent = '';
+    if (!p || p.length < 4) {
+        document.getElementById('fpError').textContent = 'Пароль: минимум 4 символа';
+        return;
+    }
+    if (p !== p2) {
+        document.getElementById('fpError').textContent = 'Пароли не совпадают';
+        return;
+    }
+    socket.emit('force_change_password', { username: myData.username, password: p, password2: p2 });
+}
+
 function handleRegister() {
     const u = document.getElementById('regUser').value.trim();
     const n = document.getElementById('regName').value.trim();
@@ -932,6 +1001,26 @@ socket.on('auth_result', function(data) {
         myData = data.user;
         notifications = myData.notifications || [];
         const isLogin = document.getElementById('authOverlay').classList.contains('active');
+        if (data.password_changed) {
+            document.getElementById('forcePasswordOverlay').classList.remove('active');
+            localStorage.setItem('cat_user', myData.username);
+            const pw = document.getElementById('fpPass').value || '';
+            if (pw) sessionStorage.setItem('cat_pass', pw);
+            document.getElementById('mainApp').style.display = 'flex';
+            updateMyInfo();
+            updateBadge();
+            updateFriendList();
+            updateRoomList();
+            loadFolders();
+            updateFolderPanel();
+            socket.emit('get_groups', { username: myData.username });
+            return;
+        }
+        if (data.must_change_password) {
+            document.getElementById('authOverlay').classList.remove('active');
+            document.getElementById('forcePasswordOverlay').classList.add('active');
+            return;
+        }
         if (isLogin) {
             localStorage.setItem('cat_user', myData.username);
             const pw = document.getElementById('loginPass').value || document.getElementById('regPass').value || savedPass || '';
@@ -957,6 +1046,8 @@ socket.on('auth_result', function(data) {
     } else {
         if (document.getElementById('registerForm').style.display === 'block') {
             document.getElementById('regError').textContent = data.error;
+        } else if (document.getElementById('resetCodeForm').style.display === 'block') {
+            document.getElementById('resetError').textContent = data.error;
         } else {
             document.getElementById('authError').textContent = data.error;
         }
@@ -1404,9 +1495,9 @@ function toggleSections() {
     var createGrp = document.getElementById('createGroupItem');
     var sep1 = document.getElementById('sep1');
     var sep2 = document.getElementById('sep2');
-    if (hasChannels && (hasGroups || createGrp)) { sep1.style.display = 'block'; } else { sep1.style.display = 'none'; }
-    if ((hasGroups || createGrp) && hasFriends) { sep2.style.display = 'block'; } else { sep2.style.display = 'none'; }
-    if (activeFolder === 'all' || activeFolder === 'groups') { createGrp.style.display = 'flex'; } else { createGrp.style.display = 'none'; }
+    if (hasChannels && (hasGroups)) { sep1.style.display = 'block'; } else { sep1.style.display = 'none'; }
+    if ((hasGroups) && hasFriends) { sep2.style.display = 'block'; } else { sep2.style.display = 'none'; }
+    createGrp.style.display = 'none';
 }
 
 setTimeout(function() {
@@ -1456,11 +1547,31 @@ function updateGroupList() {
         div.className = 'chat-item';
         div.setAttribute('data-room', gid);
         div.onclick = function() { switchRoom(gid); };
-        div.innerHTML = '<div class="chat-avatar">👥</div><span>' + escapeHtml(g.name) + '</span>' +
+        div.innerHTML = '<div class="chat-avatar"><img src="' + safeAvatarUrl(g.avatar, g.name) + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;"></div><span>' + escapeHtml(g.name) + '</span>' +
             '<span class="unread-badge" id="unread_' + gid + '"></span>';
         list.appendChild(div);
     });
     toggleSections();
+}
+
+function showCreateMenu() {
+    var o = document.getElementById('createMenuOverlay');
+    if (o) { o.remove(); return; }
+    var m = document.createElement('div');
+    m.id = 'createMenuOverlay';
+    m.className = 'modal-overlay active';
+    m.style.position = 'fixed';
+    m.style.zIndex = '2000';
+    m.innerHTML = '<div class="modal" style="max-width:280px;padding:15px;text-align:center;">' +
+        '<h3 style="margin-bottom:15px;">✏️ Создать</h3>' +
+        '<button class="btn btn-primary" id="createMenuGroupBtn" style="width:100%;margin-bottom:8px;">👥 Группу</button>' +
+        '<button class="btn btn-secondary" id="createMenuChannelBtn" style="width:100%;margin-bottom:8px;">📺 Канал</button>' +
+        '<button class="btn btn-secondary" id="createMenuCancelBtn" style="width:100%;">Отмена</button></div>';
+    document.body.appendChild(m);
+    document.getElementById('createMenuGroupBtn').onclick = function() { m.remove(); showCreateGroup(); };
+    document.getElementById('createMenuChannelBtn').onclick = function() { m.remove(); showToast('📺 Функция в разработке', 'info'); };
+    document.getElementById('createMenuCancelBtn').onclick = function() { m.remove(); };
+    m.onclick = function(e) { if (e.target === m) m.remove(); };
 }
 
 function showCreateGroup() {
@@ -1484,6 +1595,66 @@ function showCreateGroup() {
     document.getElementById('groupNameInput').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') { document.getElementById('createGroupConfirmBtn').click(); }
     });
+}
+
+
+function toggleGroupMenu() {
+    var dd = document.getElementById('groupDropdown');
+    if (!dd) return;
+    var isOpen = dd.style.display === 'block';
+    dd.style.display = isOpen ? 'none' : 'block';
+    if (!isOpen) {
+        var close = function(e) {
+            if (!dd.contains(e.target) && e.target.id !== 'groupMenuBtn') {
+                dd.style.display = 'none';
+                document.removeEventListener('click', close);
+            }
+        };
+        setTimeout(function() { document.addEventListener('click', close); }, 10);
+    }
+}
+
+function closeGroupMenu() {
+    var dd = document.getElementById('groupDropdown');
+    if (dd) dd.style.display = 'none';
+}
+
+function showEditGroup() {
+    var gid = currentGroupId;
+    var g = groupsData[currentRoom];
+    if (!g) return;
+    var o = document.getElementById('editGroupOverlay');
+    if (o) o.remove();
+    var m = document.createElement('div');
+    m.id = 'editGroupOverlay';
+    m.className = 'modal-overlay active';
+    m.style.position = 'fixed';
+    m.style.zIndex = '2000';
+    m.innerHTML = '<div class="modal" style="max-width:350px;padding:20px;text-align:center;">' +
+        '<h3 style="margin-bottom:15px;">✏️ Редактировать группу</h3>' +
+        '<div class="input-group"><label>Название</label><input type="text" id="editGroupNameInput" value="' + escapeHtml(g.name) + '" maxlength="50" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:1rem;box-sizing:border-box;outline:none;"></div>' +
+        '<div class="input-group"><label>Аватар (URL)</label><input type="text" id="editGroupAvatarInput" value="' + (g.avatar || '') + '" placeholder="https://..." style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:1rem;box-sizing:border-box;outline:none;"></div>' +
+        '<img id="editGroupAvatarPreview" src="' + safeAvatarUrl(g.avatar, g.name) + '" style="width:80px;height:80px;border-radius:50%;object-fit:cover;margin:10px auto;display:block;">' +
+        '<div style="display:flex;gap:8px;margin-top:10px;">' +
+        '<button class="btn btn-primary" id="editGroupSaveBtn" style="flex:1;">💾 Сохранить</button>' +
+        '<button class="btn btn-secondary" id="editGroupCancelBtn" style="flex:1;">Отмена</button></div></div>';
+    document.body.appendChild(m);
+    document.getElementById('editGroupNameInput').focus();
+    document.getElementById('editGroupNameInput').addEventListener('input', function() {
+        document.getElementById('editGroupAvatarPreview').src = safeAvatarUrl(document.getElementById('editGroupAvatarInput').value, this.value || g.name);
+    });
+    document.getElementById('editGroupAvatarInput').addEventListener('input', function() {
+        document.getElementById('editGroupAvatarPreview').src = safeAvatarUrl(this.value, document.getElementById('editGroupNameInput').value || g.name);
+    });
+    document.getElementById('editGroupSaveBtn').onclick = function() {
+        var name = document.getElementById('editGroupNameInput').value.trim();
+        var avatar = document.getElementById('editGroupAvatarInput').value.trim();
+        if (!name) { showToast('Введите название группы', 'error'); return; }
+        socket.emit('update_group', { username: myData.username, group_id: gid, name: name, avatar: avatar || '' });
+        m.remove();
+    };
+    document.getElementById('editGroupCancelBtn').onclick = function() { m.remove(); };
+    m.onclick = function(e) { if (e.target === m) m.remove(); };
 }
 
 function showGroupAdd() {
@@ -2063,6 +2234,9 @@ socket.on('invited_to_group', function(data) {
 socket.on('group_updated', function(group) {
     groupsData[group.id] = group;
     updateGroupList();
+    if (currentRoom === group.id) {
+        document.getElementById('chatHeader').textContent = group.name;
+    }
 });
 
 socket.on('group_left', function(data) {
@@ -2086,7 +2260,9 @@ socket.on('group_members', function(data) {
     if (!data || data.group_id !== currentGroupId) return;
     const group = groupsData[data.group_id];
     if (!group) return;
-    let html = '<h3 style="text-align:center;margin:0 0 15px;">👥 ' + escapeHtml(group.name) + '</h3>';
+    let avatarUrl = safeAvatarUrl(group.avatar, group.name);
+    let html = '<div style="text-align:center;margin:0 0 10px;"><img src="' + avatarUrl + '" style="width:64px;height:64px;border-radius:50%;object-fit:cover;display:inline-block;"></div>';
+    html += '<h3 style="text-align:center;margin:0 0 15px;">👥 ' + escapeHtml(group.name) + '</h3>';
     html += '<div style="max-height:300px;overflow-y:auto;">';
     data.members.forEach(function(m) {
         const online = m.online ? '🟢' : '⚫';
