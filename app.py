@@ -19,6 +19,7 @@ user_sessions = {}
 last_action = {}
 consecutive_msgs = {}
 auth_attempts = {}
+reset_attempts = {}
 
 def require_auth(f):
     @wraps(f)
@@ -90,7 +91,8 @@ def save_image(base64_data):
         if len(parts) != 2:
             return None
         header = parts[0]
-        ext = header.split(';')[0].split('/')[-1] if '/' in header else 'png'
+        raw_ext = header.split(';')[0].split('/')[-1] if '/' in header else ''
+        ext = raw_ext.split('+')[0].split(';')[0]
         if ext not in ALLOWED_EXTENSIONS:
             ext = 'png'
         img_bytes = base64.b64decode(parts[1])
@@ -123,11 +125,14 @@ def get_online_friends(username):
 
 
 def get_unread_count(username, room):
+    user = get_user(username)
+    if not user:
+        return 0
     return Message.query.filter(
         Message.room == room,
-        Message.sender_id != get_user(username).id,
+        Message.sender_id != user.id,
         Message.is_deleted == False
-    ).count()  # simplified: could track read state
+    ).count()
 
 
 # ========== SOCKET.IO EVENTS ==========
@@ -141,6 +146,12 @@ def handle_connect():
 def handle_auth(data):
     ip = request.remote_addr or 'unknown'
     now = time.time()
+    # Clean up old attempts every 100 requests
+    if len(auth_attempts) > 1000:
+        for ip_addr in list(auth_attempts.keys()):
+            auth_attempts[ip_addr] = [t for t in auth_attempts[ip_addr] if now - t < 900]
+            if not auth_attempts[ip_addr]:
+                del auth_attempts[ip_addr]
     attempts = auth_attempts.get(ip, [])
     attempts = [t for t in attempts if now - t < 900]
     if len(attempts) >= 10:
@@ -191,11 +202,11 @@ def handle_auth(data):
         user = get_user(un)
         if not user:
             auth_attempts.setdefault(ip, []).append(time.time())
-            emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
+            emit('auth_result', {'success': False, 'error': 'Неверный логин или пароль'})
             return
         if not verify_password(pwd, user.password_hash):
             auth_attempts.setdefault(ip, []).append(time.time())
-            emit('auth_result', {'success': False, 'error': 'Неверный пароль'})
+            emit('auth_result', {'success': False, 'error': 'Неверный логин или пароль'})
             return
 
         user.online = True
@@ -763,6 +774,19 @@ def handle_generate_reset_code(data):
 
 @socketio.on('reset_password')
 def handle_reset_password(data):
+    ip = request.remote_addr or 'unknown'
+    now = time.time()
+    # Clean up old reset attempts
+    if len(reset_attempts) > 1000:
+        for rip in list(reset_attempts.keys()):
+            reset_attempts[rip] = [t for t in reset_attempts[rip] if now - t < 900]
+            if not reset_attempts[rip]:
+                del reset_attempts[rip]
+    r_attempts = reset_attempts.get(ip, [])
+    r_attempts = [t for t in r_attempts if now - t < 900]
+    if len(r_attempts) >= 10:
+        emit('reset_result', {'success': False, 'error': 'Слишком много попыток. Подождите 15 минут.'})
+        return
     username = data.get('username', '').lower().replace('@', '')
     code = data.get('code', '').strip().upper()
     new_pw = data.get('password', '')
@@ -776,14 +800,16 @@ def handle_reset_password(data):
 
     user = get_user(username)
     if not user:
-        emit('reset_result', {'success': False, 'error': 'Пользователь не найден'})
+        reset_attempts.setdefault(ip, []).append(time.time())
+        emit('reset_result', {'success': False, 'error': 'Неверный код или пользователь'})
         return
 
     rc = ResetCode.query.filter_by(
         code=code, username=username, used=False
     ).filter(ResetCode.expires_at > time.time()).first()
     if not rc:
-        emit('reset_result', {'success': False, 'error': 'Неверный или просроченный код'})
+        reset_attempts.setdefault(ip, []).append(time.time())
+        emit('reset_result', {'success': False, 'error': 'Неверный код или пользователь'})
         return
 
     rc.used = True
@@ -1066,7 +1092,10 @@ def api_invite_codes():
 def api_invite_generate():
     auth = request.authorization
     data = request.json or {}
-    count = min(int(data.get('count', 1)), 20)
+    try:
+        count = min(int(data.get('count', 1)), 20)
+    except (ValueError, TypeError):
+        count = 1
     codes = []
     for _ in range(count):
         code = secrets.token_hex(4).upper()[:8]
@@ -1090,6 +1119,8 @@ def api_news():
     user = get_user(auth.username)
     if not user:
         return jsonify({'success': False, 'error': 'Админ не найден'})
+    if user.role not in ['owner', 'admin']:
+        return jsonify({'success': False, 'error': 'Только админ может публиковать новости'})
     msg = Message(
         room='Новости',
         sender_id=user.id,
