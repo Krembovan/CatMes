@@ -632,7 +632,11 @@ socket.on('auth_result',(d)=>{
   socket.emit('get_users')
   socket.emit('get_friends',{username:myData.username})
   socket.emit('get_groups',{username:myData.username})
-  toast('Добро пожаловать, '+myData.display_name,'success')
+   renderRooms()
+
+   renderFriends()
+   renderGroups()
+   toast('Добро пожаловать, '+myData.display_name,'success')
 })
 
 function openAdminModal(){

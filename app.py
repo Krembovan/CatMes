@@ -516,10 +516,11 @@ def get_friend_requests(username):
 
 @socketio.on('get_rooms')
 def handle_get_rooms():
+    # Отправляем всем подключенным клиентам
     emit('room_list', {
         'Общий': {'name': 'Общий канал', 'type': 'public', 'icon': '🌍'},
         'Новости': {'name': 'Новости', 'type': 'news', 'icon': '📰'},
-    })
+    }, broadcast=True)
 
 
 # ========== GROUPS ==========
