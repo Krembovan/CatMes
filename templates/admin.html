@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Админ — CAT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#3a3a4a}
+body{background:#0d0d12;color:#e0e0e0;font-family:system-ui,sans-serif;min-height:100vh}
+.header{display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid #2a2a3a}
+.header h1{background:linear-gradient(135deg,#8b5cf6,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:1.4rem}
+.header .sub{color:#666;font-size:.8rem;margin-left:auto}
+.tabs{display:flex;gap:2px;padding:8px 24px 0;border-bottom:1px solid #2a2a3a;overflow-x:auto;background:#0d0d12}
+.tab{padding:10px 18px;border:none;background:transparent;color:#888;font-size:.85rem;cursor:pointer;border-radius:8px 8px 0 0;transition:.15s;white-space:nowrap}
+.tab:hover{color:#e0e0e0;background:#1a1a24}
+.tab.active{color:#8b5cf6;background:#1a1a24;font-weight:600}
+.content{padding:20px 24px;max-width:1200px}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* Cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px}
+.card{background:#1a1a24;border:1px solid #2a2a3a;border-radius:10px;padding:16px}
+.card .label{font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#666;margin-bottom:4px}
+.card .value{font-size:1.6rem;font-weight:700}
+.card .value.purple{color:#8b5cf6}
+.card .value.cyan{color:#06b6d4}
+.card .value.green{color:#10b981}
+.card .value.orange{color:#f59e0b}
+.card .value.red{color:#ef4444}
+
+/* Activity bars */
+.bars{display:flex;align-items:end;gap:8px;padding:12px 0;height:100px}
+.bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%}
+.bar{width:100%;background:linear-gradient(to top,#8b5cf6,#06b6d4);border-radius:4px 4px 0 0;min-height:2px;transition:.3s}
+.bar-label{font-size:.65rem;color:#666}
+.bar-count{font-size:.6rem;color:#888}
+
+/* Tables */
+.table-wrap{overflow-x:auto;background:#1a1a24;border:1px solid #2a2a3a;border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{text-align:left;padding:10px 12px;font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#666;border-bottom:1px solid #2a2a3a;font-weight:600}
+td{padding:8px 12px;border-bottom:1px solid #1a1a22}
+tr:last-child td{border:none}
+tr:hover td{background:#23232f}
+.badge{display:inline-block;font-size:.65rem;padding:2px 8px;border-radius:4px;font-weight:600}
+.badge-owner{background:#8b5cf644;color:#a78bfa}
+.badge-admin{background:#06b6d444;color:#22d3ee}
+.badge-moderator{background:#f59e0b44;color:#fbbf24}
+.badge-user{background:#2a2a3a;color:#888}
+.badge-online{background:#10b98133;color:#34d399}
+.badge-offline{background:#2a2a3a;color:#666}
+
+/* User detail */
+#userDetail{display:none;background:#1a1a24;border:1px solid #2a2a3a;border-radius:10px;padding:16px;margin-top:12px}
+#userDetail .row{display:flex;gap:16px;align-items:center;padding:6px 0;flex-wrap:wrap}
+
+/* Buttons */
+.btn{padding:8px 16px;border:none;border-radius:8px;font-size:.82rem;cursor:pointer;font-weight:600;transition:.15s}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:linear-gradient(135deg,#8b5cf6,#06b6d4);color:#fff}
+.btn-primary:hover{opacity:.9}
+.btn-sm{padding:4px 10px;font-size:.75rem}
+.btn-danger{background:#ef4444;color:#fff}
+.btn-danger:hover{background:#dc2626}
+.btn-success{background:#10b981;color:#fff}
+.btn-success:hover{background:#059669}
+.btn-ghost{background:transparent;color:#888;border:1px solid #2a2a3a}
+.btn-ghost:hover{background:#2a2a3a;color:#e0e0e0}
+
+/* Forms */
+.input-group{margin-bottom:10px}
+.input-group label{display:block;font-size:.75rem;color:#888;margin-bottom:4px}
+.input-group input,.input-group select,.input-group textarea{width:100%;padding:8px 12px;background:#0d0d12;border:1px solid #2a2a3a;border-radius:8px;color:#e0e0e0;font-size:.85rem;outline:none;font-family:inherit}
+.input-group input:focus,.input-group select:focus,.input-group textarea:focus{border-color:#8b5cf6}
+.input-group textarea{resize:vertical;min-height:100px}
+select option{background:#1a1a24}
+
+/* Search */
+.search-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.search-bar input,.search-bar select{flex:1;min-width:150px;padding:8px 12px;background:#0d0d12;border:1px solid #2a2a3a;border-radius:8px;color:#e0e0e0;font-size:.85rem;outline:none}
+.search-bar input:focus{border-color:#8b5cf6}
+
+/* Grid halves */
+.halves{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:768px){.halves{grid-template-columns:1fr}}
+.result{font-size:.82rem;padding:6px 0}
+
+/* Toast-like */
+.msg{display:inline-block;padding:6px 12px;border-radius:6px;font-size:.8rem;margin-top:6px}
+.msg-ok{background:#065f4622;color:#10b981}
+.msg-err{background:#7f1d1d22;color:#ef4444}
+
+/* Section header */
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.section-header h2{font-size:1.1rem;color:#e0e0e0}
+
+/* Message list */
+.msg-item{padding:8px 12px;border-bottom:1px solid #1a1a22;font-size:.82rem}
+.msg-item:last-child{border:none}
+.msg-item .meta{color:#666;font-size:.7rem}
+.msg-item .text{color:#ccc;margin:2px 0}
+
+/* Filter bar */
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+.filter-bar .input-group{margin:0;flex:1;min-width:120px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>CAT</h1>
+  <span class="sub">Админ-панель</span>
+  <a href="/" style="color:#666;font-size:.8rem;text-decoration:none">← На главную</a>
+</div>
+
+<div class="tabs" id="tabs">
+  <button class="tab active" data-tab="dashboard">📊 Дашборд</button>
+  <button class="tab" data-tab="users">👥 Пользователи</button>
+  <button class="tab" data-tab="invites">🔑 Инвайты</button>
+  <button class="tab" data-tab="secrets">🔑 Секреты</button>
+</div>
+
+<div class="content">
+
+<!-- TAB: DASHBOARD -->
+<div class="tab-content active" id="tab-dashboard">
+  <div class="cards" id="statCards">
+    <div class="card"><div class="label">Online</div><div class="value purple" id="statOnline">—</div></div>
+    <div class="card"><div class="label">Пользователей</div><div class="value cyan" id="statUsers">—</div></div>
+    <div class="card"><div class="label">Сообщений всего</div><div class="value green" id="statTotalMsgs">—</div></div>
+    <div class="card"><div class="label">За 24ч</div><div class="value orange" id="statTodayMsgs">—</div></div>
+    <div class="card"><div class="label">Заявок в друзья</div><div class="value red" id="statPending">—</div></div>
+  </div>
+
+  <div class="halves">
+    <div class="card">
+      <div class="label">Активность по дням</div>
+      <div class="bars" id="activityBars"></div>
+    </div>
+    <div class="card">
+      <div class="label">Последние регистрации</div>
+      <div id="lastUsers" style="font-size:.82rem"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="label">Последние сообщения</div>
+    <div id="lastMsgs" style="font-size:.82rem"></div>
+  </div>
+</div>
+
+<!-- TAB: USERS -->
+<div class="tab-content" id="tab-users">
+  <div class="section-header">
+    <h2>👥 Все пользователи</h2>
+    <input type="text" id="userSearchInput" placeholder="🔍 Фильтр..." oninput="filterUsers(this.value)" style="padding:6px 12px;background:#0d0d12;border:1px solid #2a2a3a;border-radius:8px;color:#e0e0e0;font-size:.82rem;outline:none;width:200px">
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Username</th><th>Имя</th><th>Роль</th><th>XP</th><th>Ачивки</th><th>Друзья</th><th>Статус</th><th></th>
+      </tr></thead>
+      <tbody id="usersTableBody"></tbody>
+    </table>
+  </div>
+  <div id="userDetail"></div>
+</div>
+
+<!-- TAB: INVITES -->
+<div class="tab-content" id="tab-invites">
+  <div class="section-header">
+    <h2>🔑 Инвайт-коды</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="number" id="inviteCount" value="1" min="1" max="20" style="width:60px;padding:6px 8px;background:#0d0d12;border:1px solid #2a2a3a;border-radius:8px;color:#e0e0e0;font-size:.82rem;text-align:center">
+      <button class="btn btn-primary btn-sm" onclick="generateInvites()">+ Сгенерировать</button>
+    </div>
+  </div>
+  <div id="inviteResult" class="result"></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Код</th><th>Создал</th><th>Использовал</th><th>Дата</th></tr></thead>
+      <tbody id="invitesTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TAB: SECRETS -->
+<div class="tab-content" id="tab-secrets">
+  <div class="section-header">
+    <h2>🔑 Секреты админ-панели</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Username</th><th>Имя</th><th>Роль</th><th>Секретный код</th><th></th></tr></thead>
+      <tbody id="secretsTableBody"></tbody>
+    </table>
+  </div>
+  <div id="secretRegenResult" class="result"></div>
+</div>
+
+</div>
+
+<script>
+const ACHIEVEMENTS = {
+  'first_msg': '🐱 Первый мяу',
+  'first_friend': '🤝 Первый друг',
+  'soul_company': '🎉 Душа компании',
+  'talkative': '💬 Общительный',
+  'daily_login': '📅 Ежедневный вход',
+  'weekly_marathon': '🔥 Недельный марафон',
+  'bio': '✏️ Биограф',
+  'avatar': '🖼️ Аватар',
+  'first_spark': '✨ Первый огонёк',
+  'night_chatter': '🌙 Ночной чатер',
+  'friend_specialist': '🤝 Специалист по связям',
+  'media_master': '📸 Медиа-мастер',
+  'sprinter': '🏃 Спринтер',
+  'dictator': '👑 Диктатор',
+  'pioneer': '🏆 Первопроходец',
+  'reaction': '❤️ Сердцеед',
+  'voice': '🎤 Голос',
+};
+
+async function api(method, body){
+  const r=await fetch('/api/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{}),credentials:'include'})
+  return r.json()
+}
+
+// ===== TABS =====
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'))
+    document.querySelectorAll('.tab-content').forEach(x=>x.classList.remove('active'))
+    t.classList.add('active')
+    document.getElementById('tab-'+t.dataset.tab).classList.add('active')
+    if(t.dataset.tab==='dashboard')loadDashboard()
+    if(t.dataset.tab==='users')loadUsers()
+    if(t.dataset.tab==='invites')loadInvites()
+    if(t.dataset.tab==='secrets')loadSecrets()
+  })
+})
+
+// ===== DASHBOARD =====
+async function loadDashboard(){
+  const s=await api('stats')
+  document.getElementById('statOnline').textContent=s.online
+  document.getElementById('statUsers').textContent=s.users
+  document.getElementById('statTotalMsgs').textContent=s.total_msgs
+  document.getElementById('statTodayMsgs').textContent=s.today_msgs
+  document.getElementById('statPending').textContent=s.pending_requests
+
+  // Activity bars
+  const max=Math.max(...s.activity_days.map(d=>d.count),1)
+  document.getElementById('activityBars').innerHTML=s.activity_days.map(d=>
+    '<div class="bar-wrap"><div class="bar" style="height:'+(d.count/max*100)+'%"></div><div class="bar-count">'+d.count+'</div><div class="bar-label">'+d.date+'</div></div>'
+  ).join('')
+
+  // Last users
+  document.getElementById('lastUsers').innerHTML=s.last_users.map(u=>
+    '<div style="padding:3px 0;border-bottom:1px solid #1a1a22">@'+u.username+' — '+new Date(u.created_at*1000).toLocaleString('ru')+'</div>'
+  ).join('')||'<div style="color:#666">нет</div>'
+
+  // Last messages
+  document.getElementById('lastMsgs').innerHTML=s.last_messages.map(m=>
+    '<div class="msg-item"><div class="meta">['+m.room+'] @'+m.sender_username+' — '+new Date(m.created_at*1000).toLocaleString('ru')+'</div><div class="text">'+(m.text||'<i style="color:#666">медиа</i>')+'</div></div>'
+  ).join('')||'<div style="color:#666">нет</div>'
+}
+
+// ===== USERS =====
+let allUsers=[]
+async function loadUsers(){
+  const r=await api('users')
+  allUsers=r.users||[]
+  renderUsers(allUsers)
+}
+function renderUsers(list){
+  document.getElementById('usersTableBody').innerHTML=list.map(u=>{
+    const roleBadge='badge-'+u.role
+    const statusBadge=u.online?'badge-online':'badge-offline'
+    return '<tr>'+
+      '<td><b>@'+u.username+'</b></td>'+
+      '<td>'+u.display_name+'</td>'+
+      '<td><span class="badge '+roleBadge+'">'+u.role+'</span></td>'+
+      '<td>'+u.xp+'</td>'+
+      '<td>'+u.achievement_count+'</td>'+
+      '<td>'+u.friend_count+'</td>'+
+      '<td><span class="badge '+statusBadge+'">'+(u.online?'Online':'Offline')+'</span></td>'+
+      '<td><button class="btn btn-sm btn-ghost" onclick="showUser(\''+u.username+'\')">→</button></td>'+
+      '</tr>'
+  }).join('')
+}
+function filterUsers(q){
+  const f=q.toLowerCase()
+  renderUsers(allUsers.filter(u=>u.username.includes(f)||u.display_name.toLowerCase().includes(f)))
+}
+
+async function showUser(username){
+  const [r, whoami]=await Promise.all([api('user/'+username), api('whoami')])
+  const u=r.user
+  if(!u){document.getElementById('userDetail').innerHTML='<div class="msg-err">Не найден</div>';return}
+  document.getElementById('userDetail').style.display='block'
+  document.getElementById('userDetail').innerHTML=
+    '<div class="section-header"><h2>@'+u.username+'</h2><button class="btn btn-sm btn-ghost" onclick="closeUser()">✕</button></div>'+
+    '<div class="row"><b>Имя:</b> '+u.display_name+'</div>'+
+    '<div class="row"><b>Bio:</b> '+(u.bio||'—')+'</div>'+
+    '<div class="row"><b>Роль:</b> <select id="roleSelect" onchange="changeRole(\''+u.username+'\')">'+
+      ['user','moderator','admin','owner'].map(r=>'<option value="'+r+'"'+(r===u.role?' selected':'')+'>'+r+'</option>').join('')+
+    '</select></div>'+
+    '<div class="row"><b>XP:</b> '+u.xp+'</div>'+
+    '<div class="row"><b>Верифицирован:</b> '+(u.verified?'✅':'❌')+
+    ' <button class="btn btn-sm btn-ghost" onclick="toggleVerify(\''+u.username+'\')">toggle</button></div>'+
+    '<div class="row"><b>Легендарный:</b> '+(u.legendary?'✅':'❌')+
+    ' <button class="btn btn-sm btn-ghost" onclick="toggleLegendary(\''+u.username+'\')">toggle</button></div>'+
+    '<div class="row"><b>Online:</b> '+(u.online?'Да':'Нет (last: '+new Date(u.last_seen*1000).toLocaleString('ru')+')')+'</div>'+
+    '<div class="row"><b>Создан:</b> '+new Date(u.created_at*1000).toLocaleString('ru')+'</div>'+
+    '<div class="row"><b>Друзья:</b> '+(u.friends.length?u.friends.map(f=>'@'+f).join(', '):'—')+'</div>'+
+    '<div class="row"><b>Ачивки:</b></div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">'+
+      (u.achievements.length?u.achievements.map(a=>'<span class="badge badge-admin">'+(ACHIEVEMENTS[a.ach_id]||a.ach_id)+'</span>').join(''):'<span style="color:#666;font-size:.82rem">нет</span>')+
+    '</div>'+
+    '<div class="row"><b>Выдать ачивку:</b> <select id="awardSelect">'+
+      Object.entries(ACHIEVEMENTS).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+
+    '</select> <button class="btn btn-sm btn-success" onclick="awardAchievement(\''+u.username+'\')">+</button></div>'+
+    '<div class="row"><b>Сброс пароля:</b> <button class="btn btn-sm btn-danger" onclick="genResetCodeFor(\''+u.username+'\')">генерация кода</button></div>'+
+    '<div id="userActionResult" class="result"></div>'
+
+  document.getElementById('userDetail').scrollIntoView({behavior:'smooth'})
+}
+function closeUser(){document.getElementById('userDetail').style.display='none';document.getElementById('userDetail').innerHTML=''}
+
+async function changeRole(username){
+  const role=document.getElementById('roleSelect').value
+  const r=await api('user/'+username+'/role',{role})
+  showActionResult(r.success?'✅ Роль: '+r.role:'❌ '+r.error)
+  loadUsers()
+}
+async function toggleVerify(username){
+  const r=await api('user/'+username+'/verify')
+  showActionResult(r.success? (r.verified?'✅ Верифицирован':'❌ Верификация снята') : '❌ '+r.error)
+  showUser(username)
+}
+async function toggleLegendary(username){
+  const r=await api('user/'+username+'/legendary')
+  showActionResult(r.success? (r.legendary?'✅ Легендарный режим':'❌ Выключен') : '❌ '+r.error)
+  showUser(username)
+}
+async function awardAchievement(username){
+  const ach=document.getElementById('awardSelect').value
+  const r=await api('user/'+username+'/award',{ach_id:ach})
+  showActionResult(r.success?'✅ Выдано! XP: '+r.xp:'❌ '+r.error)
+  showUser(username)
+}
+async function genResetCodeFor(username){
+  const r=await api('generate_reset_code',{username})
+  showActionResult(r.success?'🔑 Код: '+r.code:'❌ '+r.error)
+}
+function showActionResult(text){
+  document.getElementById('userActionResult').innerHTML='<div class="msg msg-ok">'+text+'</div>'
+}
+
+// ===== INVITES =====
+async function loadInvites(){
+  var r=await api('invite_codes')
+  document.getElementById('invitesTableBody').innerHTML=(r.codes||[]).map(c=>
+    '<tr><td style="font-family:monospace;font-weight:600">'+c.code+'</td><td>@'+(c.created_by||'—')+'</td><td>'+(c.used_by?'@'+c.used_by:'<span style="color:#666">—</span>')+'</td><td>'+new Date(c.created_at*1000).toLocaleString('ru')+'</td></tr>'
+  ).join('')||'<tr><td colspan="4" style="text-align:center;color:#666">Нет кодов</td></tr>'
+}
+async function generateInvites(){
+  var count=parseInt(document.getElementById('inviteCount').value)||1
+  var r=await api('invite_codes/generate',{count})
+  if(r.success){
+    document.getElementById('inviteResult').innerHTML='<div class="msg msg-ok">✅ Коды: '+r.codes.join(', ')+'</div>'
+    loadInvites()
+  }else{
+    document.getElementById('inviteResult').innerHTML='<div class="msg msg-err">❌ '+r.error+'</div>'
+  }
+}
+
+// ===== SECRETS =====
+async function loadSecrets(){
+  var r=await api('admin_secrets')
+  if(!r.secrets){
+    document.getElementById('secretsTableBody').innerHTML='<tr><td colspan="5" style="text-align:center;color:#ef4444">Нет доступа (только owner)</td></tr>'
+    return
+  }
+  document.getElementById('secretsTableBody').innerHTML=r.secrets.map(u=>
+    '<tr><td>@'+u.username+'</td><td>'+u.display_name+'</td><td><span class="badge badge-'+u.role+'">'+u.role+'</span></td>'+
+    '<td style="font-family:monospace;font-weight:600;letter-spacing:1px;color:#8b5cf6">'+(u.secret||'—')+'</td>'+
+    '<td><button class="btn btn-sm btn-ghost" onclick="regenSecret(\''+u.username+'\')">🔄</button></td></tr>'
+  ).join('')
+}
+async function regenSecret(username){
+  if(!confirm('Сбросить секрет для @'+username+'?'))return
+  var r=await api('admin_secrets/regenerate',{username})
+  if(r.success){
+    document.getElementById('secretRegenResult').innerHTML='<div class="msg msg-ok">✅ Новый секрет: <b style="font-family:monospace">'+r.secret+'</b> — передай админу</div>'
+    loadSecrets()
+  }else{
+    document.getElementById('secretRegenResult').innerHTML='<div class="msg msg-err">❌ '+r.error+'</div>'
+  }
+}
+
+// ===== INIT =====
+loadDashboard()
+</script>
+</body>
+</html>

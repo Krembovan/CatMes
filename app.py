@@ -1,123 +1,59 @@
-import eventlet
-eventlet.monkey_patch()
-
-import json, os, time, hashlib, secrets, base64, uuid, functools
-from flask import Flask, request, render_template, send_from_directory, make_response, session, redirect, url_for
-from flask_socketio import SocketIO, emit, join_room
+import os, time, json, base64, uuid, hashlib, secrets
+from flask import Flask, request, render_template, send_from_directory, jsonify
+from flask_socketio import SocketIO, emit, join_room, leave_room
+from config import SECRET_KEY, SQLALCHEMY_DATABASE_URI, UPLOADS_DIR, RATE_LIMIT, MAX_XP, UPLOAD_MAX_SIZE, ALLOWED_EXTENSIONS, ROLES
+from models import db, User, Friendship, Message, Reaction, Group, GroupMember, Achievement, Notification, ResetCode, InviteCode, hash_password, verify_password, generate_admin_secret
+from modules.achievements import ACHIEVEMENTS, award_achievement
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('CAT_SECRET_KEY', os.urandom(32).hex())
-socketio = SocketIO(app, cors_allowed_origins="https://catmes.ru", async_mode='eventlet')
+app.config['SECRET_KEY'] = SECRET_KEY
+app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH'] = UPLOAD_MAX_SIZE
 
-DATA_DIR = os.environ.get('CAT_DATA_DIR', '/tmp/cat_data')
-UPLOADS_DIR = os.path.join(DATA_DIR, 'uploads')
-os.makedirs(UPLOADS_DIR, exist_ok=True)
+db.init_app(app)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', manage_session=False)
 
 user_sessions = {}
 last_action = {}
 consecutive_msgs = {}
 
-def load_db(key):
-    path = os.path.join(DATA_DIR, f'{key}.json')
-    if os.path.exists(path):
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            pass
-    return [] if key == 'messages' else {}
+with app.app_context():
+    db.create_all()
+    for un, role in ROLES.items():
+        user = User.query.filter_by(username=un).first()
+        if user:
+            user.role = role
+            if not user.admin_secret_hash:
+                _, user.admin_secret_hash, user.admin_secret_plain = generate_admin_secret()
+            db.session.commit()
+    # Generate secrets for existing admins who don't have one
+    for admin in User.query.filter(User.role.in_(['owner', 'admin', 'moderator']), User.admin_secret_hash == '').all():
+        _, admin.admin_secret_hash, admin.admin_secret_plain = generate_admin_secret()
+        db.session.commit()
 
-def save_db(key, data):
-    path = os.path.join(DATA_DIR, f'{key}.json')
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
 
-def load_users():
-    return load_db('users')
 
-def save_user(username, data):
-    users = load_db('users')
-    users[username] = data
-    save_db('users', users)
+# ========== HELPERS ==========
 
-def load_messages():
-    return load_db('messages')
+def get_user(username):
+    return User.query.filter_by(username=username.lower().strip().replace('@', '')).first()
 
-def save_message(msg):
-    msgs = load_db('messages')
-    msgs.append(msg)
-    if len(msgs) > 500:
-        msgs = msgs[-500:]
-    save_db('messages', msgs)
 
-def load_groups():
-    return load_db('groups')
+def get_user_by_sid(sid):
+    for un, s in user_sessions.items():
+        if s == sid:
+            return get_user(un)
+    return None
 
-def save_groups(groups):
-    save_db('groups', groups)
-
-def save_group(gid, data):
-    groups = load_db('groups')
-    groups[gid] = data
-    save_db('groups', groups)
-
-def hash_password(password: str) -> str:
-    salt = secrets.token_hex(16)
-    h = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
-    return f"pbkdf2:sha256:100000${salt}${h.hex()}"
-
-def verify_password(password: str, hashed: str) -> bool:
-    if not hashed or not isinstance(hashed, str):
-        return False
-    if not hashed.startswith('pbkdf2:'):
-        return password == hashed
-    try:
-        meta_part, salt, stored_hash = hashed.split('$', 2)
-        _, _, iterations_str = meta_part.split(':')
-        iterations = int(iterations_str)
-        h = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), iterations)
-        return h.hex() == stored_hash
-    except Exception as e:
-        return False
 
 def notify_user(username, event, data):
-    sid = user_sessions.get(username)
+    sid = user_sessions.get(username.lower())
     if sid:
-        try:
-            socketio.emit(event, data, room=sid)
-        except Exception as e:
-            print(f"[notify_user] Ошибка для @{username}: {e}")
+        socketio.emit(event, data, room=sid)
 
-def notify_friends(username, event, data):
-    users = load_users()
-    if username in users:
-        for friend in users[username].get('friends', []):
-            notify_user(friend, event, data)
 
-@app.route('/')
-def index():
-    resp = make_response(render_template('index.html'))
-    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    resp.headers['Pragma'] = 'no-cache'
-    resp.headers['Expires'] = '0'
-    return resp
-
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    return send_from_directory('templates/static', filename)
-
-@app.route('/sw.js')
-def service_worker():
-    return send_from_directory('templates/static', 'sw.js')
-
-@app.route('/uploads/<filename>')
-def uploaded_file(filename):
-    return send_from_directory(UPLOADS_DIR, filename)
-
-RATE_LIMIT = 0.5
-MAX_XP = 99999
-
-def check_rate_limit(username):
+def check_rate(username):
     now = time.time()
     last = last_action.get(username, 0)
     if now - last < RATE_LIMIT:
@@ -125,62 +61,66 @@ def check_rate_limit(username):
     last_action[username] = now
     return True
 
-ROLES = {'krembovan': 'owner'}
-
-def html_escape(s):
-    return str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&#x27;')
-
-def sync_roles():
-    users = load_users()
-    for un in users:
-        if un in ROLES:
-            users[un]['role'] = ROLES[un]
-        if 'role' not in users[un]:
-            users[un]['role'] = 'user'
-    save_db('users', users)
-
-sync_roles()
-
-def migrate_created_at():
-    users = load_users()
-    changed = False
-    base_time = time.time() - (len(users) * 3600)
-    for i, (un, u) in enumerate(users.items()):
-        if 'created_at' not in u:
-            u['created_at'] = base_time + (i * 3600)
-            changed = True
-        u.setdefault('achievements', [])
-        u.setdefault('xp', 0)
-        if u['xp'] > MAX_XP:
-            u['xp'] = MAX_XP
-            changed = True
-        if not any(a['id'] == 'pioneer' for a in u['achievements']):
-            u['achievements'].append({'id': 'pioneer', 'earned': time.time()})
-            u['xp'] += 300
-            if u['xp'] > MAX_XP:
-                u['xp'] = MAX_XP
-            changed = True
-    if changed:
-        save_db('users', users)
-
-migrate_created_at()
-
-def check_pioneer(username):
-    users = load_users()
-    if username not in users:
-        return
-    ordered = list(users.items())
-    for i, (un, _) in enumerate(ordered):
-        if un == username and i < 50:
-            award_achievement(username, 'pioneer')
-            return
 
 def get_role(username):
-    un = username.lower()
-    users = load_users()
-    if un in users and 'role' in users[un]:
-        return users[un]['role']
-    return ROLES.get(un, 'user')
+    user = get_user(username)
+    if user:
+        return user.role
+    return ROLES.get(username.lower(), 'user')
+
+
+def save_image(base64_data):
+    try:
+        parts = base64_data.split(',', 1)
+        if len(parts) != 2:
+            return None
+        header = parts[0]
+        ext = header.split(';')[0].split('/')[-1] if '/' in header else 'png'
+        if ext not in ALLOWED_EXTENSIONS:
+            ext = 'png'
+        img_bytes = base64.b64decode(parts[1])
+        if len(img_bytes) > UPLOAD_MAX_SIZE:
+            return None
+        filename = f"{uuid.uuid4()}.{ext}"
+        path = os.path.join(UPLOADS_DIR, filename)
+        with open(path, 'wb') as f:
+            f.write(img_bytes)
+        return f'/uploads/{filename}'
+    except Exception:
+        return None
+
+
+def get_online_friends(username):
+    user = get_user(username)
+    if not user:
+        return []
+    friends = Friendship.query.filter(
+        ((Friendship.user_id == user.id) | (Friendship.friend_id == user.id)),
+        Friendship.status == 'accepted'
+    ).all()
+    result = []
+    for f in friends:
+        fid = f.friend_id if f.user_id == user.id else f.user_id
+        friend = User.query.get(fid)
+        if friend:
+            result.append(friend.to_dict())
+    return result
+
+
+def get_unread_count(username, room):
+    return Message.query.filter(
+        Message.room == room,
+        Message.sender_id != get_user(username).id,
+        Message.is_deleted == False
+    ).count()  # simplified: could track read state
+
+
+# ========== SOCKET.IO EVENTS ==========
+
+@socketio.on('connect')
+def handle_connect():
+    pass
+
 
 @socketio.on('auth')
 def handle_auth(data):
@@ -197,998 +137,979 @@ def handle_auth(data):
         emit('auth_result', {'success': False, 'error': 'Пароль: минимум 4 символа'})
         return
 
-    users = load_users()
-
     if action == 'register':
         if pwd != pwd2:
             emit('auth_result', {'success': False, 'error': 'Пароли не совпадают'})
             return
-        if un in users:
+        if get_user(un):
             emit('auth_result', {'success': False, 'error': 'Пользователь уже существует'})
             return
+        user = User(
+            username=un,
+            display_name=dn or un,
+            password_hash=hash_password(pwd),
+            avatar_url=f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
+            bio='',
+            role=ROLES.get(un, 'user'),
+            xp=300,
+            created_at=time.time(),
+            last_seen=time.time(),
+            online=True,
+        )
+        db.session.add(user)
+        db.session.commit()
 
-        new_user = {
-            'username': un, 'display_name': dn or un, 'pass': hash_password(pwd),
-            'avatar': f'https://api.dicebear.com/7.x/bottts-neutral/svg?seed={un}',
-            'bio': 'Пользователь CAT', 'friends': [], 'requests': [], 'notifications': [], 'role': get_role(un),
-            'xp': 0, 'achievements': [], 'telegram_verified': False, 'birthday': '', 'created_at': time.time(), 'legendary': False
-        }
-        new_user['achievements'].append({'id': 'pioneer', 'earned': time.time()})
-        new_user['xp'] = min(new_user['xp'] + 300, MAX_XP)
-        save_user(un, new_user)
+        ach = Achievement(user_id=user.id, ach_id='pioneer', earned_at=time.time())
+        db.session.add(ach)
+        db.session.commit()
+
         user_sessions[un] = request.sid
-        emit('auth_result', {'success': True, 'user': new_user})
+        emit('auth_result', {'success': True, 'user': user.to_dict(include_private=True)})
     else:
-        if un not in users:
+        user = get_user(un)
+        if not user:
             emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
             return
-        stored_pass = users[un].get('pass', '')
-        if stored_pass == 'RESET_NEEDED':
-            emit('auth_result', {'success': False, 'error': 'Внимание! Ваш пароль был утерян, пожалуйста, свяжитесь с администрацией и укажите, что желаете сбросить пароль.'})
-            return
-        if stored_pass == 'MUST_CHANGE':
-            emit('auth_result', {'success': False, 'error': 'Требуется смена пароля. Используйте код сброса.'})
-            return
-        if not verify_password(pwd, stored_pass):
+        if not verify_password(pwd, user.password_hash):
             emit('auth_result', {'success': False, 'error': 'Неверный пароль'})
             return
 
-        user_data = users[un]
-        if not user_data['pass'].startswith('pbkdf2:'):
-            user_data['pass'] = hash_password(pwd)
-        user_data['role'] = get_role(un)
-        user_data.setdefault('friends', [])
-        user_data.setdefault('requests', [])
-        user_data.setdefault('notifications', [])
-        user_data.setdefault('xp', 0)
-        user_data.setdefault('achievements', [])
-        user_data.setdefault('telegram_verified', False)
-        user_data.setdefault('birthday', '')
-        user_data.setdefault('legendary', False)
+        user.online = True
+        user.last_seen = time.time()
+        db.session.commit()
+
         user_sessions[un] = request.sid
-        user_data['online'] = True
-        user_data['last_seen'] = time.time()
-        save_user(un, user_data)
-        check_daily_login(un)
-        if get_role(un) in ['moderator', 'admin', 'owner']:
-            award_achievement(un, 'dictator')
-        check_pioneer(un)
-        notify_friends(un, 'friend_online', {'username': un, 'online': True})
-        groups = load_groups()
-        for gid, g in groups.items():
-            if un in g['members']:
-                join_room(gid)
-        emit('auth_result', {'success': True, 'user': user_data})
+        emit('auth_result', {'success': True, 'user': user.to_dict(include_private=True)})
+
+        # Notify friends
+        friends = get_online_friends(un)
+        for f in friends:
+            notify_user(f['username'], 'friend_online', {'username': un, 'online': True})
+
+
+@socketio.on('join_room')
+def handle_join_room(data):
+    room = data.get('room', 'Общий')
+    join_room(room)
+    messages = Message.query.filter_by(room=room, is_deleted=False).order_by(Message.created_at.desc()).limit(50).all()
+    messages.reverse()
+    emit('history', [m.to_dict() for m in messages])
+
+
+@socketio.on('leave')
+def handle_leave(data):
+    room = data.get('room', '')
+    leave_room(room)
+
+
+@socketio.on('message')
+def handle_message(data):
+    room = data.get('room', 'Общий')
+    text = data.get('text', '').strip()
+    image_data = data.get('image', '').strip()
+    voice_data = data.get('voice', '').strip()
+    reply_to = data.get('reply_to', 0)
+    username = data.get('username', '')
+
+    user = get_user(username)
+    if not user:
+        return
+    if not check_rate(username):
+        emit('error_msg', {'text': 'Слишком часто. Подождите.'})
+        return
+    if room == 'Новости' and user.role not in ['owner', 'admin']:
+        return
+    if not text and not image_data and not voice_data:
+        return
+    if text and len(text) > 5000:
+        return
+
+    image_url = save_image(image_data) if image_data else ''
+    voice_url = save_image(voice_data) if voice_data else ''
+
+    reply_id = None
+    if reply_to:
+        reply_msg = Message.query.get(reply_to)
+        if reply_msg and not reply_msg.is_deleted:
+            reply_id = reply_to
+
+    msg = Message(
+        room=room,
+        sender_id=user.id,
+        text=text,
+        image_url=image_url,
+        voice_url=voice_url,
+        reply_to=reply_id,
+        created_at=time.time(),
+    )
+    db.session.add(msg)
+    db.session.commit()
+
+    award_achievement(db, Achievement, User, username, 'first_msg', socketio)
+    if room == 'Общий':
+        award_achievement(db, Achievement, User, username, 'talkative', socketio)
+
+    # Consecutive messages
+    now = time.time()
+    cons = consecutive_msgs.setdefault(username, {'room': room, 'count': 0, 'last': 0})
+    if cons['room'] == room and now - cons['last'] < 60:
+        cons['count'] += 1
+    else:
+        cons['room'] = room
+        cons['count'] = 1
+    cons['last'] = now
+    if cons['count'] >= 10:
+        award_achievement(db, Achievement, User, username, 'first_spark', socketio)
+
+    # Night chatter
+    current_hour = int(time.strftime('%H', time.localtime()))
+    if 0 <= current_hour < 5:
+        award_achievement(db, Achievement, User, username, 'night_chatter', socketio)
+
+    # Daily tracking
+    today = time.strftime('%Y-%m-%d')
+    if user.daily_date != today:
+        user.daily_msgs = 0
+        user.daily_date = today
+    user.daily_msgs = (user.daily_msgs or 0) + 1
+    db.session.commit()
+
+    if (user.daily_msgs or 0) >= 100:
+        award_achievement(db, Achievement, User, username, 'sprinter', socketio)
+
+    socketio.emit('message', msg.to_dict(), room=room)
+
+
+@socketio.on('delete_message')
+def handle_delete_message(data):
+    msg_id = data.get('msg_id', 0)
+    username = data.get('username', '').lower()
+    user = get_user(username)
+    if not user:
+        return
+    msg = Message.query.get(msg_id)
+    if not msg:
+        return
+    can_delete = False
+    if user.role in ['owner', 'admin']:
+        can_delete = True
+    elif user.role == 'moderator' and msg.room == 'Общий':
+        can_delete = True
+    elif msg.sender_id == user.id:
+        can_delete = True
+    if not can_delete:
+        emit('error_msg', {'text': 'Нет прав'})
+        return
+    msg.is_deleted = True
+    db.session.commit()
+    socketio.emit('message_deleted', {'msg_id': msg_id}, room=msg.room)
+
+
+@socketio.on('add_reaction')
+def handle_add_reaction(data):
+    msg_id = data.get('msg_id', 0)
+    emoji = data.get('emoji', '').strip()
+    username = data.get('username', '').lower()
+    user = get_user(username)
+    if not user or not emoji:
+        return
+    msg = Message.query.get(msg_id)
+    if not msg or msg.is_deleted:
+        return
+    existing = Reaction.query.filter_by(message_id=msg_id, user_id=user.id, emoji=emoji).first()
+    if existing:
+        db.session.delete(existing)
+        db.session.commit()
+        socketio.emit('reaction_removed', {'msg_id': msg_id, 'reaction_id': existing.id}, room=msg.room)
+        return
+    reaction = Reaction(message_id=msg_id, user_id=user.id, emoji=emoji)
+    db.session.add(reaction)
+    db.session.commit()
+    award_achievement(db, Achievement, User, username, 'reaction', socketio)
+    socketio.emit('reaction_added', {'msg_id': msg_id, 'reaction': reaction.to_dict()}, room=msg.room)
+
+
+@socketio.on('typing')
+def handle_typing(data):
+    room = data.get('room', '')
+    username = data.get('username', '')
+    if room and username:
+        socketio.emit('user_typing', {'username': username, 'room': room}, room=room, include_self=False)
+
+
+@socketio.on('get_users')
+def handle_get_users():
+    users = User.query.order_by(User.online.desc(), User.username).all()
+    emit('users_list', [u.to_dict() for u in users])
+
+
+@socketio.on('get_profile')
+def handle_get_profile(data):
+    target = data.get('username', '').lower()
+    user = get_user(target)
+    if not user:
+        emit('user_profile', {'error': 'Пользователь не найден'})
+        return
+    emit('user_profile', {'user': user.to_dict(include_private=True)})
+
 
 @socketio.on('update_profile')
-def handle_profile_update(data):
-    un = data.get('username', '').lower()
-    users = load_users()
-    if un not in users:
-        emit('profile_updated', {'error': 'Пользователь не найден'})
+def handle_update_profile(data):
+    username = data.get('username', '').lower()
+    user = get_user(username)
+    if not user:
         return
-    if data.get('display_name', '').strip(): users[un]['display_name'] = data['display_name'].strip()
-    if 'bio' in data: users[un]['bio'] = data['bio'].strip()
-    if 'birthday' in data: users[un]['birthday'] = data['birthday'].strip()
+    if data.get('display_name', '').strip():
+        user.display_name = data['display_name'].strip()
+    if 'bio' in data:
+        user.bio = data['bio'].strip()
+    if 'birthday' in data:
+        user.birthday = data['birthday'].strip()
+    if 'theme' in data:
+        user.theme = data['theme'].strip()
     av = data.get('avatar', '').strip()
     if av:
-        av_lower = av.lower()
-        if av_lower.startswith('javascript:'):
+        lower = av.lower()
+        if lower.startswith('javascript:') or (lower.startswith('data:') and not lower.startswith('data:image/')):
             av = ''
-        elif av_lower.startswith('data:') and not av_lower.startswith('data:image/'):
-            av = ''
-        elif not (av_lower.startswith('http://') or av_lower.startswith('https://') or av_lower.startswith('data:image/') or av_lower.startswith('/uploads/')):
+        elif lower.startswith('data:image/'):
+            saved = save_image(av)
+            if saved:
+                av = saved
+            else:
+                av = ''
+        elif not (lower.startswith('http://') or lower.startswith('https://') or lower.startswith('/uploads/')):
             av = ''
         if av:
-            users[un]['avatar'] = av
-    save_user(un, users[un])
-    if users[un].get('bio', '').strip():
-        award_achievement(un, 'bio')
-    if av and users[un].get('avatar', ''):
-        award_achievement(un, 'avatar')
-    emit('profile_updated', {'user': users[un]})
+            user.avatar_url = av
+            award_achievement(db, Achievement, User, username, 'avatar', socketio)
+    db.session.commit()
+
+    if user.bio.strip():
+        award_achievement(db, Achievement, User, username, 'bio', socketio)
+    if user.avatar_url:
+        award_achievement(db, Achievement, User, username, 'avatar', socketio)
+
+    emit('profile_updated', {'user': user.to_dict(include_private=True)})
+
 
 @socketio.on('send_friend_request')
 def handle_friend_request(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower().replace('@', '')
-    if not target_un: 
-        emit('friend_msg', {'text': 'Введите имя', 'type': 'error'}); 
+    if not target_un:
+        emit('friend_msg', {'text': 'Введите имя', 'type': 'error'})
         return
-    if my_un and not check_rate_limit(my_un):
-        emit('friend_msg', {'text': 'Слишком часто. Подождите.', 'type': 'error'})
+    if not check_rate(my_un):
+        emit('friend_msg', {'text': 'Слишком часто', 'type': 'error'})
         return
-    users = load_users()
-    if target_un not in users: 
-        emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'}); 
+    me = get_user(my_un)
+    target = get_user(target_un)
+    if not me or not target:
+        emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'})
         return
-    if target_un == my_un: 
-        emit('friend_msg', {'text': 'Нельзя добавить себя', 'type': 'error'}); 
+    if target.id == me.id:
+        emit('friend_msg', {'text': 'Нельзя добавить себя', 'type': 'error'})
         return
-    target = users[target_un]
-    if my_un in target.get('friends', []): 
-        emit('friend_msg', {'text': 'Вы уже друзья', 'type': 'info'}); 
+    existing = Friendship.query.filter(
+        ((Friendship.user_id == me.id) & (Friendship.friend_id == target.id)) |
+        ((Friendship.user_id == target.id) & (Friendship.friend_id == me.id))
+    ).first()
+    if existing:
+        if existing.status == 'accepted':
+            emit('friend_msg', {'text': 'Вы уже друзья', 'type': 'info'})
+        else:
+            emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'})
         return
-    if my_un in target.get('requests', []): 
-        emit('friend_msg', {'text': 'Запрос уже отправлен', 'type': 'info'}); 
-        return
-    target.setdefault('requests', []).append(my_un)
-    notif = {
-        'id': str(int(time.time() * 1000)), 'type': 'friend_request', 'from': my_un,
-        'from_name': users[my_un].get('display_name', my_un),
-        'text': f'@{my_un} хочет добавить вас в друзья', 'timestamp': time.time(), 'read': False
-    }
-    target.setdefault('notifications', []).insert(0, notif)
-    save_user(target_un, target)
+    friendship = Friendship(user_id=me.id, friend_id=target.id, status='pending')
+    db.session.add(friendship)
+    db.session.commit()
+    notif = Notification(
+        user_id=target.id,
+        type='friend_request',
+        data={'from': my_un, 'from_name': me.display_name or me.username},
+    )
+    db.session.add(notif)
+    db.session.commit()
     emit('friend_msg', {'text': f'Запрос отправлен @{target_un}', 'type': 'success'})
-    notify_user(target_un, 'incoming_friend_request', {'user': target, 'from': my_un})
+    notify_user(target_un, 'friend_request', {'from': my_un, 'from_name': me.display_name or me.username})
 
-@socketio.on('accept_friend')
-def handle_accept(data):
+
+@socketio.on('friend_response')
+def handle_friend_response(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
-    users = load_users()
-    if my_un not in users: return
-    user = users[my_un]
-    found = None
-    for req in user.get('requests', []):
-        if req.lower() == target_un: 
-            found = req
-            break
-    if not found: return
-    user['requests'].remove(found)
-    if target_un not in user.get('friends', []): 
-        user.setdefault('friends', []).append(target_un)
-    if target_un in users:
-        if my_un not in users[target_un].get('friends', []):
-            users[target_un].setdefault('friends', []).append(my_un)
-            save_user(target_un, users[target_un])
-    user['notifications'] = [n for n in user.get('notifications', []) if not (n.get('type')=='friend_request' and n.get('from','').lower()==target_un)]
-    save_user(my_un, user)
-    award_achievement(my_un, 'first_friend')
-    if len(user.get('friends', [])) >= 5:
-        award_achievement(my_un, 'soul_company')
-    if len(user.get('friends', [])) >= 15:
-        award_achievement(my_un, 'friend_specialist')
-    award_achievement(target_un, 'first_friend')
-    if target_un in users and len(users[target_un].get('friends', [])) >= 5:
-        award_achievement(target_un, 'soul_company')
-    if target_un in users and len(users[target_un].get('friends', [])) >= 15:
-        award_achievement(target_un, 'friend_specialist')
-    emit('auth_result', {'success': True, 'user': user})
-    notify_user(target_un, 'friend_accepted_notify', {'user': users.get(target_un), 'by': my_un})
+    accept = data.get('accept', True)
+    me = get_user(my_un)
+    target = get_user(target_un)
+    if not me or not target:
+        return
+    friendship = Friendship.query.filter(
+        (Friendship.user_id == target.id) & (Friendship.friend_id == me.id) & (Friendship.status == 'pending')
+    ).first()
+    if not friendship:
+        return
+    if accept:
+        friendship.status = 'accepted'
+        db.session.commit()
+        award_achievement(db, Achievement, User, my_un, 'first_friend', socketio)
+        award_achievement(db, Achievement, User, target_un, 'first_friend', socketio)
+        friend_count_me = Friendship.query.filter(
+            ((Friendship.user_id == me.id) | (Friendship.friend_id == me.id)),
+            Friendship.status == 'accepted'
+        ).count()
+        friend_count_target = Friendship.query.filter(
+            ((Friendship.user_id == target.id) | (Friendship.friend_id == target.id)),
+            Friendship.status == 'accepted'
+        ).count()
+        if friend_count_me >= 5:
+            award_achievement(db, Achievement, User, my_un, 'soul_company', socketio)
+        if friend_count_target >= 5:
+            award_achievement(db, Achievement, User, target_un, 'soul_company', socketio)
+        notify_user(target_un, 'friend_accepted', {'by': my_un, 'by_name': me.display_name or me.username})
+    else:
+        db.session.delete(friendship)
+        db.session.commit()
+    emit('friends_updated', get_online_friends(my_un))
+    emit('friend_requests', get_friend_requests(my_un))
 
-@socketio.on('decline_friend')
-def handle_decline(data):
-    my_un = data.get('my_username', '').strip().lower()
-    target_un = data.get('target_username', '').strip().lower()
-    users = load_users()
-    if my_un not in users: return
-    user = users[my_un]
-    found = None
-    for req in user.get('requests', []):
-        if req.lower() == target_un: 
-            found = req
-            break
-    if found: 
-        user['requests'].remove(found)
-    user['notifications'] = [n for n in user.get('notifications', []) if not (n.get('type')=='friend_request' and n.get('from','').lower()==target_un)]
-    save_user(my_un, user)
-    emit('auth_result', {'success': True, 'user': user})
 
 @socketio.on('remove_friend')
 def handle_remove_friend(data):
     my_un = data.get('my_username', '').strip().lower()
     target_un = data.get('target_username', '').strip().lower()
-    users = load_users()
-    if my_un not in users: return
-    if target_un in users[my_un].get('friends', []):
-        users[my_un]['friends'].remove(target_un)
-        save_user(my_un, users[my_un])
-    if target_un in users and my_un in users[target_un].get('friends', []):
-        users[target_un]['friends'].remove(my_un)
-        save_user(target_un, users[target_un])
-    emit('auth_result', {'success': True, 'user': users[my_un]})
-    notify_user(target_un, 'friend_removed_notify', {'user': users.get(target_un), 'by': my_un})
-
-@socketio.on('delete_message')
-def handle_delete_message(data):
-    msg_ts = str(data.get('msg_id', ''))
-    username = data.get('username', '').lower()
-    role = get_role(username)
-
-    msgs = load_messages()
-    target_msg = None
-    for m in msgs:
-        if str(m.get('id')) == msg_ts or str(m.get('timestamp')) == msg_ts:
-            target_msg = m
-            break
-
-    can_delete = False
-    if role in ['owner', 'admin']:
-        can_delete = True
-    elif role == 'moderator' and target_msg and target_msg.get('room') == 'Общий':
-        can_delete = True
-    elif target_msg and target_msg.get('username', '').lower() == username:
-        if target_msg.get('room', '').startswith('dm_'):
-            can_delete = True
-
-    if not can_delete:
-        emit('error_msg', {'text': 'Нет прав'})
+    me = get_user(my_un)
+    target = get_user(target_un)
+    if not me or not target:
         return
+    friendship = Friendship.query.filter(
+        ((Friendship.user_id == me.id) & (Friendship.friend_id == target.id)) |
+        ((Friendship.user_id == target.id) & (Friendship.friend_id == me.id)),
+        Friendship.status == 'accepted'
+    ).first()
+    if friendship:
+        db.session.delete(friendship)
+        db.session.commit()
+    emit('friends_updated', get_online_friends(my_un))
+    notify_user(target_un, 'friend_removed', {'by': my_un})
 
-    msgs = [m for m in msgs if not (str(m.get('id')) == msg_ts or str(m.get('timestamp')) == msg_ts)]
-    save_db('messages', msgs)
-    emit('message_deleted', {'msg_id': msg_ts}, broadcast=True)
 
-@socketio.on('message')
-def handle_msg(data):
-    room = data.get('room', 'Общий')
-    text = data.get('text', '').strip()
-    image = data.get('image', '').strip()
-    reply_to = data.get('reply_to', '')
-    username = data.get('username', '')
+@socketio.on('get_friends')
+def handle_get_friends(data):
+    my_un = data.get('username', '').strip().lower()
+    emit('friends_updated', get_online_friends(my_un))
+    emit('friend_requests', get_friend_requests(my_un))
 
-    if username and not check_rate_limit(username):
-        emit('error_msg', {'text': 'Слишком часто. Подождите.'})
-        return
 
-    if room == 'Новости' and get_role(username) not in ['owner', 'admin']:
-        return
+def get_friend_requests(username):
+    user = get_user(username)
+    if not user:
+        return []
+    requests = Friendship.query.filter_by(friend_id=user.id, status='pending').all()
+    result = []
+    for r in requests:
+        req_user = User.query.get(r.user_id)
+        if req_user:
+            result.append(req_user.to_dict())
+    return result
 
-    if not text and not image:
-        return
-    if text and len(text) > 5000:
-        return
-    if image:
-        if len(image) > 5 * 1024 * 1024:
-            return
-        if not image.startswith('data:image/'):
-            return
-        try:
-            img_data = base64.b64decode(image.split(',', 1)[1])
-            ext = image.split(';')[0].split('/')[-1]
-            if ext not in ('png', 'jpeg', 'jpg', 'gif', 'webp'):
-                ext = 'png'
-            img_filename = f"{uuid.uuid4()}.{ext}"
-            img_path = os.path.join(UPLOADS_DIR, img_filename)
-            with open(img_path, 'wb') as f:
-                f.write(img_data)
-            image = f'/uploads/{img_filename}'
-        except Exception:
-            return
-
-    if room.startswith('dm_'):
-        parts = room.split('_')
-        if len(parts) >= 3:
-            a, b = sorted([parts[1], parts[2]])
-            room = f"dm_{a}_{b}"
-
-    data['room'] = room
-    data['timestamp'] = time.time()
-    data['text'] = text
-    data['image'] = image
-    data['read'] = False
-
-    data['id'] = data.get('id', str(uuid.uuid4()))
-
-    if reply_to:
-        data['reply_to'] = reply_to
-        msgs = load_messages()
-        for m in msgs:
-            if str(m.get('timestamp')) == str(reply_to) or str(m.get('id')) == str(reply_to):
-                data['reply_author'] = m.get('user') or m.get('username', '')
-                data['reply_text'] = (m.get('text') or (m.get('image') and '[Изображение]') or '')[:100]
-                break
-
-    save_message(data)
-    award_achievement(username, 'first_msg')
-    if room == 'Общий':
-        award_achievement(username, 'talkative')
-
-    if username:
-        user_consec = consecutive_msgs.setdefault(username, {'room': room, 'count': 0})
-        if user_consec['room'] == room:
-            user_consec['count'] += 1
-        else:
-            user_consec['room'] = room
-            user_consec['count'] = 1
-        if user_consec['count'] >= 10:
-            award_achievement(username, 'first_spark')
-
-        current_hour = int(time.strftime('%H', time.localtime(time.time())))
-        if current_hour >= 0 and current_hour < 5:
-            award_achievement(username, 'night_chatter')
-
-        users = load_users()
-        if username in users:
-            today = time.strftime('%Y-%m-%d')
-            u_data = users[username]
-            if u_data.get('daily_date') != today:
-                u_data['daily_msgs'] = 0
-                u_data['daily_photos'] = 0
-                u_data['daily_date'] = today
-            u_data['daily_msgs'] = u_data.get('daily_msgs', 0) + 1
-            if image:
-                u_data['daily_photos'] = u_data.get('daily_photos', 0) + 1
-            save_user(username, u_data)
-            if u_data['daily_photos'] >= 10:
-                award_achievement(username, 'media_master')
-            if u_data['daily_msgs'] >= 100:
-                award_achievement(username, 'sprinter')
-
-    preview_text = text[:30] if text else ('[Изображение]' if image else '')
-
-    if room.startswith('dm_'):
-        parts = room.split('_')
-        for p in parts[1:]:
-            if p != data.get('username', ''):
-                notify_user(p, 'new_dm', {
-                    'from': data.get('username'),
-                    'text': preview_text,
-                    'room': room
-                })
-
-    emit('message', data, room=room)
-
-@socketio.on('mark_read')
-def handle_mark_read(data):
-    room = data.get('room', '')
-    username = data.get('username', '')
-    if room:
-        msgs = load_messages()
-        changed = False
-        for m in msgs:
-            if m.get('room') == room and m.get('username') != username and not m.get('read'):
-                m['read'] = True
-                changed = True
-        if changed:
-            save_db('messages', msgs)
-            emit('messages_read', {'room': room, 'by': username}, room=room)
-
-@socketio.on('join')
-def on_join(data):
-    room = data.get('room', 'Общий')
-    if room.startswith('dm_'):
-        parts = room.split('_')
-        if len(parts) >= 3:
-            a, b = sorted([parts[1], parts[2]])
-            room = f"dm_{a}_{b}"
-    join_room(room)
-    msgs = load_messages()
-    hist = [m for m in msgs if m.get('room') == room][-50:]
-    emit('history', hist)
 
 @socketio.on('get_rooms')
-def get_rooms():
+def handle_get_rooms():
     emit('room_list', {
-        'Общий': {"name": "Общий канал", "type": "public"},
-        'Новости': {"name": "Новости", "type": "news"}
+        'Общий': {'name': 'Общий канал', 'type': 'public', 'icon': '🌍'},
+        'Новости': {'name': 'Новости', 'type': 'news', 'icon': '📰'},
     })
 
-@socketio.on('get_user_profile')
-def handle_get_user_profile(data):
-    target_un = data.get('username', '').strip().lower().replace('@', '')
-    users = load_users()
-    if target_un not in users:
-        emit('user_profile', {'error': 'Пользователь не найден'})
-        return
-    user = users[target_un]
-    emit('user_profile', {
-        'username': target_un,
-        'user': {
-            'username': target_un,
-            'display_name': user.get('display_name') or target_un,
-            'avatar': user.get('avatar', ''),
-            'bio': user.get('bio', ''),
-            'friends': user.get('friends', []),
-            'requests': user.get('requests', []),
-            'role': get_role(target_un),
-            'online': user.get('online', False),
-            'last_seen': user.get('last_seen', 0),
-            'xp': user.get('xp', 0),
-            'achievements': user.get('achievements', []),
-            'telegram_verified': user.get('telegram_verified', False),
-            'birthday': user.get('birthday', ''),
-            'legendary': user.get('legendary', False)
-        }
-    })
-
-@socketio.on('check_status')
-def handle_check_status(data):
-    un = data.get('username', '').lower()
-    emit('friend_online', {'username': un, 'online': un in user_sessions})
-
-@socketio.on('get_avatar')
-def handle_get_avatar(data):
-    un = data.get('username', '').lower()
-    users = load_users()
-    if un in users:
-        emit('friend_avatar', {'username': un, 'avatar': users[un].get('avatar', '')})
-
-@socketio.on('reset_login')
-def handle_reset_login(data):
-    code = data.get('code', '').strip().upper().replace('-', '')
-    codes = load_reset_codes()
-    if code not in codes:
-        emit('auth_result', {'success': False, 'error': 'Неверный или истёкший код сброса'})
-        return
-    entry = codes[code]
-    if entry.get('used'):
-        emit('auth_result', {'success': False, 'error': 'Код уже использован'})
-        return
-    if entry.get('expires_at', 0) < time.time():
-        emit('auth_result', {'success': False, 'error': 'Срок действия кода истёк'})
-        return
-    un = entry['username']
-    users = load_users()
-    if un not in users:
-        emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
-        return
-    users[un]['pass'] = 'MUST_CHANGE'
-    save_user(un, users[un])
-    codes[code]['used'] = True
-    save_reset_codes(codes)
-    user_sessions[un] = request.sid
-    users[un]['online'] = True
-    users[un]['last_seen'] = time.time()
-    save_user(un, users[un])
-    users[un].setdefault('achievements', [])
-    users[un].setdefault('xp', 0)
-    users[un]['role'] = get_role(un)
-    emit('auth_result', {'success': True, 'user': users[un], 'must_change_password': True})
-
-@socketio.on('force_change_password')
-def handle_force_change_password(data):
-    un = data.get('username', '').strip().lower()
-    pwd = data.get('password', '')
-    pwd2 = data.get('password2', '')
-    if not pwd or len(pwd) < 4:
-        emit('auth_result', {'success': False, 'error': 'Пароль: минимум 4 символа'})
-        return
-    if pwd != pwd2:
-        emit('auth_result', {'success': False, 'error': 'Пароли не совпадают'})
-        return
-    users = load_users()
-    if un not in users:
-        emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
-        return
-    if users[un].get('pass') != 'MUST_CHANGE':
-        emit('auth_result', {'success': False, 'error': 'Сброс пароля не требуется'})
-        return
-    users[un]['pass'] = hash_password(pwd)
-    save_user(un, users[un])
-    user_sessions[un] = request.sid
-    users[un]['online'] = True
-    users[un]['last_seen'] = time.time()
-    users[un].setdefault('achievements', [])
-    users[un].setdefault('xp', 0)
-    users[un]['role'] = get_role(un)
-    save_user(un, users[un])
-    emit('auth_result', {'success': True, 'user': users[un], 'password_changed': True})
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    users = load_users()
-    for un, sid in list(user_sessions.items()):
-        if sid == request.sid:
-            del user_sessions[un]
-            if un in users:
-                users[un]['online'] = False
-                users[un]['last_seen'] = time.time()
-                save_user(un, users[un])
-                notify_friends(un, 'friend_online', {'username': un, 'online': False})
-            break
-
-@socketio.on('typing')
-def handle_typing(data):
-    room = data.get('room', '')
-    if room.startswith('dm_'):
-        emit('user_typing', {'username': data.get('username'), 'user': data.get('user')}, room=room, include_self=False)
-
-@socketio.on('call_user')
-def handle_call_user(data):
-    notify_user(data.get('to'), 'incoming_call', {'from': data.get('from', ''), 'sdp': data.get('sdp')})
-
-@socketio.on('call_accepted')
-def handle_call_accepted(data):
-    notify_user(data.get('to'), 'call_accepted', {'sdp': data.get('sdp')})
-
-@socketio.on('call_signal')
-def handle_call_signal(data):
-    notify_user(data.get('to'), 'call_signal', {'ice': data.get('ice')})
 
 # ========== GROUPS ==========
 
 @socketio.on('create_group')
 def handle_create_group(data):
-    user = data.get('username', '').lower()
+    username = data.get('username', '').lower()
+    user = get_user(username)
     if not user:
         return
     name = data.get('name', '').strip()
     if not name or len(name) > 50:
-        emit('error_msg', {'text': 'Название группы: 1-50 символов'})
+        emit('error_msg', {'text': 'Название: 1-50 символов'})
         return
-    gid = 'group_' + str(uuid.uuid4())[:8]
-    group = {
-        'id': gid,
-        'name': name,
-        'creator': user,
-        'members': [user],
-        'created_at': time.time()
-    }
-    save_group(gid, group)
-    join_room(gid)
-    emit('group_created', group)
+    group = Group(name=name, creator_id=user.id)
+    db.session.add(group)
+    db.session.flush()
+    member = GroupMember(group_id=group.id, user_id=user.id)
+    db.session.add(member)
+    db.session.commit()
+    join_room(f"group_{group.id}")
+    emit('group_created', group.to_dict())
+
 
 @socketio.on('get_groups')
-def handle_get_groups(data=None):
-    user = data.get('username', '').lower() if data else None
+def handle_get_groups(data):
+    username = data.get('username', '').lower()
+    user = get_user(username)
     if not user:
         return
-    groups = load_groups()
-    user_groups = {}
-    for gid, g in groups.items():
-        if user in g['members']:
-            user_groups[gid] = g
-            join_room(gid)
-    emit('groups_list', user_groups)
+    memberships = GroupMember.query.filter_by(user_id=user.id).all()
+    groups = {}
+    for m in memberships:
+        group = m.group
+        if group:
+            groups[group.id] = group.to_dict()
+            join_room(f"group_{group.id}")
+    emit('groups_list', groups)
+
 
 @socketio.on('invite_to_group')
 def handle_invite_to_group(data):
-    user = data.get('username', '').lower()
+    username = data.get('username', '').lower()
+    user = get_user(username)
     if not user:
         return
-    gid = data.get('group_id', '')
+    group_id = data.get('group_id', 0)
     target = data.get('target', '').lower().replace('@', '')
-    groups = load_groups()
-    group = groups.get(gid)
-    if not group or user != group['creator']:
+    group = Group.query.get(group_id)
+    target_user = get_user(target)
+    if not group or not target_user:
+        return
+    if group.creator_id != user.id:
         emit('error_msg', {'text': 'Только создатель может добавлять'})
         return
-    if target in group['members']:
+    existing = GroupMember.query.filter_by(group_id=group.id, user_id=target_user.id).first()
+    if existing:
         emit('error_msg', {'text': 'Уже в группе'})
         return
-    users = load_users()
-    if target not in users:
-        emit('error_msg', {'text': 'Пользователь не найден'})
-        return
-    group['members'].append(target)
-    save_group(gid, group)
-    notify_user(target, 'invited_to_group', {'group': group, 'invited_by': user})
-    emit('group_updated', group)
-    emit('group_updated', group, room=gid)
+    member = GroupMember(group_id=group.id, user_id=target_user.id)
+    db.session.add(member)
+    db.session.commit()
+    socketio.emit('group_updated', group.to_dict(), room=f"group_{group.id}")
+    notify_user(target, 'group_invite', {'group': group.to_dict(), 'by': username})
+
 
 @socketio.on('leave_group')
 def handle_leave_group(data):
-    user = data.get('username', '').lower()
+    username = data.get('username', '').lower()
+    user = get_user(username)
     if not user:
         return
-    gid = data.get('group_id', '')
-    groups = load_groups()
-    group = groups.get(gid)
-    if not group or user not in group['members']:
-        return
-    group['members'].remove(user)
-    if not group['members']:
-        del groups[gid]
-        save_groups(groups)
-        emit('group_deleted', {'group_id': gid}, room=gid)
-    else:
-        if user == group['creator'] and group['members']:
-            group['creator'] = group['members'][0]
-        save_group(gid, group)
-        emit('group_updated', group, room=gid)
-    emit('group_left', {'group_id': gid})
-
-@socketio.on('get_group_members')
-def handle_get_group_members(data):
-    gid = data.get('group_id', '')
-    groups = load_groups()
-    group = groups.get(gid)
+    group_id = data.get('group_id', 0)
+    group = Group.query.get(group_id)
     if not group:
         return
-    users = load_users()
-    members = []
-    for m in group['members']:
-        u = users.get(m, {})
-        members.append({
-            'username': m,
-            'display_name': u.get('display_name') or m,
-            'avatar': u.get('avatar', ''),
-            'online': m in user_sessions
+    member = GroupMember.query.filter_by(group_id=group.id, user_id=user.id).first()
+    if not member:
+        return
+    db.session.delete(member)
+    if group.members.count() == 0:
+        db.session.delete(group)
+        db.session.commit()
+        socketio.emit('group_deleted', {'group_id': group_id}, room=f"group_{group_id}")
+    else:
+        if group.creator_id == user.id:
+            first = group.members.first()
+            if first:
+                group.creator_id = first.user_id
+        db.session.commit()
+        socketio.emit('group_updated', group.to_dict(), room=f"group_{group.id}")
+    emit('group_left', {'group_id': group_id})
+
+
+# ========== NOTIFICATIONS ==========
+
+@socketio.on('get_notifications')
+def handle_get_notifications(data):
+    username = data.get('username', '').lower()
+    user = get_user(username)
+    if not user:
+        return
+    notifs = Notification.query.filter_by(user_id=user.id).order_by(Notification.created_at.desc()).limit(30).all()
+    emit('notifications', [n.to_dict() for n in notifs])
+
+
+@socketio.on('mark_notification_read')
+def handle_mark_notification_read(data):
+    notif_id = data.get('notif_id', 0)
+    notif = Notification.query.get(notif_id)
+    if notif:
+        notif.read = True
+        db.session.commit()
+
+
+# ========== INVITE CODES ==========
+
+@socketio.on('verify_invite')
+def handle_verify_invite(data):
+    username = data.get('username', '').lower()
+    code = data.get('code', '').strip().upper()
+    user = get_user(username)
+    if not user:
+        return
+    if user.verified:
+        emit('invite_result', {'success': True, 'message': 'Уже верифицирован'})
+        return
+    invite = InviteCode.query.filter_by(code=code, used_by=None).first()
+    if not invite:
+        emit('invite_result', {'success': False, 'error': 'Неверный код'})
+        return
+    invite.used_by = username
+    user.verified = True
+    db.session.commit()
+    emit('invite_result', {'success': True, 'message': 'Верификация пройдена!'})
+
+
+# ========== PASSWORD RESET ==========
+
+@socketio.on('verify_admin_access')
+def handle_verify_admin_access(data):
+    username = data.get('username', '').lower()
+    secret = data.get('secret', '')
+    user = get_user(username)
+    if not user:
+        emit('admin_access_result', {'success': False, 'error': 'Пользователь не найден'})
+        return
+    if user.role not in ['owner', 'admin', 'moderator']:
+        emit('admin_access_result', {'success': False, 'error': 'Нет прав'})
+        return
+    if not user.admin_secret_hash:
+        emit('admin_access_result', {'success': False, 'error': 'Нет секрета админки. Попроси владельца выдать заново.'})
+        return
+    if not verify_password(secret, user.admin_secret_hash):
+        emit('admin_access_result', {'success': False, 'error': 'Неверный секретный код'})
+        return
+    emit('admin_access_result', {'success': True})
+
+
+@socketio.on('generate_reset_code')
+def handle_generate_reset_code(data):
+    username = data.get('username', '').lower()
+    requester = data.get('requester', '').lower()
+    admin = get_user(requester)
+    if not admin or admin.role not in ['owner', 'admin', 'moderator']:
+        emit('admin_msg', {'text': 'Нет прав', 'type': 'error'})
+        return
+    target = get_user(username)
+    if not target:
+        emit('admin_msg', {'text': 'Пользователь не найден', 'type': 'error'})
+        return
+    code = secrets.token_hex(4).upper()[:8]
+    rc = ResetCode(code=code, username=username)
+    db.session.add(rc)
+    db.session.commit()
+    emit('admin_msg', {
+        'text': f'Код для @{username}: {code} (действует 24ч)',
+        'type': 'success'
+    })
+
+
+@socketio.on('reset_password')
+def handle_reset_password(data):
+    username = data.get('username', '').lower().replace('@', '')
+    code = data.get('code', '').strip().upper()
+    new_pw = data.get('password', '')
+
+    if not username or not code or not new_pw:
+        emit('reset_result', {'success': False, 'error': 'Заполни все поля'})
+        return
+    if len(new_pw) < 4:
+        emit('reset_result', {'success': False, 'error': 'Пароль: минимум 4 символа'})
+        return
+
+    user = get_user(username)
+    if not user:
+        emit('reset_result', {'success': False, 'error': 'Пользователь не найден'})
+        return
+
+    rc = ResetCode.query.filter_by(
+        code=code, username=username, used=False
+    ).filter(ResetCode.expires_at > time.time()).first()
+    if not rc:
+        emit('reset_result', {'success': False, 'error': 'Неверный или просроченный код'})
+        return
+
+    rc.used = True
+    user.password_hash = hash_password(new_pw)
+    db.session.commit()
+
+    emit('reset_result', {'success': True, 'message': 'Пароль изменён! Можешь войти.'})
+
+
+# ========== ADMIN ==========
+
+def admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth:
+            return ('Forbidden', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+        user = get_user(auth.username)
+        if not user or not verify_password(auth.password, user.password_hash) or user.role not in ['owner', 'admin', 'moderator']:
+            return ('Wrong', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ========== ADMIN API ==========
+
+@app.route('/api/generate_reset_code', methods=['POST'])
+@admin_required
+def api_generate_reset_code():
+    data = request.json or {}
+    username = data.get('username', '').lower().strip().replace('@', '')
+    target = get_user(username)
+    if not target:
+        return jsonify({'success': False, 'error': 'Пользователь не найден'})
+    code = secrets.token_hex(4).upper()[:8]
+    rc = ResetCode(code=code, username=username)
+    db.session.add(rc)
+    db.session.commit()
+    return jsonify({'success': True, 'code': code})
+
+
+@app.route('/api/stats', methods=['POST'])
+@admin_required
+def api_stats():
+    now = time.time()
+    today = time.strftime('%Y-%m-%d')
+    users = User.query.count()
+    online = User.query.filter_by(online=True).count()
+    total_msgs = Message.query.count()
+    today_msgs = Message.query.filter(Message.created_at >= now - 86400).count()
+    pending_requests = Friendship.query.filter_by(status='pending').count()
+
+    # Activity by day (last 7 days)
+    days = []
+    for i in range(6, -1, -1):
+        day_start = now - (i * 86400 + now % 86400)
+        day_end = day_start + 86400
+        count = Message.query.filter(
+            Message.created_at >= day_start,
+            Message.created_at < day_end
+        ).count()
+        days.append({
+            'date': time.strftime('%d.%m', time.localtime(day_start)),
+            'count': count
         })
-    emit('group_members', {'group_id': gid, 'members': members})
+
+    # Last registered
+    last_users = User.query.order_by(User.created_at.desc()).limit(5).all()
+    # Last messages
+    last_msgs = Message.query.filter_by(is_deleted=False).order_by(Message.created_at.desc()).limit(5).all()
+
+    return jsonify({
+        'users': users,
+        'online': online,
+        'total_msgs': total_msgs,
+        'today_msgs': today_msgs,
+        'pending_requests': pending_requests,
+        'activity_days': days,
+        'last_users': [{'username': u.username, 'display_name': u.display_name, 'created_at': u.created_at} for u in last_users],
+        'last_messages': [m.to_dict() for m in last_msgs],
+    })
+
+
+@app.route('/api/users', methods=['POST'])
+@admin_required
+def api_users():
+    users = User.query.order_by(User.online.desc(), User.username).all()
+    return jsonify({
+        'users': [{
+            'id': u.id,
+            'username': u.username,
+            'display_name': u.display_name,
+            'role': u.role,
+            'xp': u.xp,
+            'verified': u.verified,
+            'online': u.online,
+            'achievement_count': u.achievements.count(),
+            'friend_count': Friendship.query.filter(
+                ((Friendship.user_id == u.id) | (Friendship.friend_id == u.id)),
+                Friendship.status == 'accepted'
+            ).count() // 2,
+            'last_seen': u.last_seen,
+            'created_at': u.created_at,
+        } for u in users]
+    })
+
+
+@app.route('/api/user/<username>', methods=['POST'])
+@admin_required
+def api_user_detail(username):
+    user = get_user(username)
+    if not user:
+        return jsonify({'error': 'Не найден'})
+    return jsonify({
+        'user': {
+            'username': user.username,
+            'display_name': user.display_name,
+            'bio': user.bio,
+            'role': user.role,
+            'xp': user.xp,
+            'legendary': user.legendary,
+            'verified': user.verified,
+            'online': user.online,
+            'last_seen': user.last_seen,
+            'created_at': user.created_at,
+            'achievements': [a.to_dict() for a in user.achievements.all()],
+            'friends': list(set(
+                f.receiver.username if f.user_id == user.id else f.sender.username
+                for f in Friendship.query.filter(
+                    ((Friendship.user_id == user.id) | (Friendship.friend_id == user.id)),
+                    Friendship.status == 'accepted'
+                ).all()
+            )),
+        }
+    })
+
+
+@app.route('/api/user/<username>/role', methods=['POST'])
+@admin_required
+def api_user_role(username):
+    auth = request.authorization
+    requester = get_user(auth.username)
+    data = request.json or {}
+    new_role = data.get('role', '')
+    if new_role not in ['user', 'moderator', 'admin', 'owner']:
+        return jsonify({'success': False, 'error': 'Некорректная роль'})
+    user = get_user(username)
+    if not user:
+        return jsonify({'success': False, 'error': 'Не найден'})
+    # Only owner can assign owner or admin roles
+    if new_role in ['owner', 'admin'] and requester.role != 'owner':
+        return jsonify({'success': False, 'error': 'Только владелец может выдавать owner/admin'})
+    # Only owner can demote owner
+    if user.role == 'owner' and requester.role != 'owner':
+        return jsonify({'success': False, 'error': 'Только владелец может менять роль владельца'})
+    # System owner (krembovan) cannot be demoted
+    if username == 'krembovan' and new_role != 'owner':
+        return jsonify({'success': False, 'error': 'Нельзя понизить системного владельца'})
+    old_role = user.role
+    user.role = new_role
+    secret_plain = None
+    if new_role in ['owner', 'admin', 'moderator'] and not user.admin_secret_hash:
+        secret_plain, user.admin_secret_hash, user.admin_secret_plain = generate_admin_secret()
+    if old_role in ['owner', 'admin', 'moderator'] and new_role == 'user':
+        user.admin_secret_hash = ''
+    db.session.commit()
+    if new_role in ['moderator', 'admin'] and old_role == 'user':
+        from modules.achievements import award_achievement
+        award_achievement(db, Achievement, User, username, 'dictator', None)
+    return jsonify({'success': True, 'role': new_role, 'admin_secret': secret_plain})
+
+
+@app.route('/api/user/<username>/verify', methods=['POST'])
+@admin_required
+def api_user_verify(username):
+    user = get_user(username)
+    if not user:
+        return jsonify({'success': False, 'error': 'Не найден'})
+    user.verified = not user.verified
+    db.session.commit()
+    return jsonify({'success': True, 'verified': user.verified})
+
+
+@app.route('/api/user/<username>/award', methods=['POST'])
+@admin_required
+def api_user_award(username):
+    data = request.json or {}
+    ach_id = data.get('ach_id', '')
+    if ach_id not in ACHIEVEMENTS:
+        return jsonify({'success': False, 'error': 'Неизвестная ачивка'})
+    user = get_user(username)
+    if not user:
+        return jsonify({'success': False, 'error': 'Не найден'})
+    existing = Achievement.query.filter_by(user_id=user.id, ach_id=ach_id).first()
+    if existing:
+        return jsonify({'success': False, 'error': 'Уже есть'})
+    ach = Achievement(user_id=user.id, ach_id=ach_id)
+    db.session.add(ach)
+    user.xp = min((user.xp or 0) + ACHIEVEMENTS[ach_id]['xp'], 99999)
+    db.session.commit()
+    return jsonify({'success': True, 'xp': user.xp})
+
+
+@app.route('/api/user/<username>/legendary', methods=['POST'])
+@admin_required
+def api_user_legendary(username):
+    user = get_user(username)
+    if not user:
+        return jsonify({'success': False, 'error': 'Не найден'})
+    user.legendary = not user.legendary
+    db.session.commit()
+    return jsonify({'success': True, 'legendary': user.legendary})
+
+
+@app.route('/api/admin_secrets', methods=['POST'])
+@admin_required
+def api_admin_secrets():
+    auth = request.authorization
+    requester = get_user(auth.username)
+    if not requester or requester.role != 'owner':
+        return jsonify({'success': False, 'error': 'Только владелец'})
+    admins = User.query.filter(User.role.in_(['owner', 'admin', 'moderator'])).all()
+    return jsonify({
+        'secrets': [{
+            'username': u.username,
+            'display_name': u.display_name,
+            'role': u.role,
+            'secret': u.admin_secret_plain or '—',
+        } for u in admins]
+    })
+
+
+@app.route('/api/admin_secrets/regenerate', methods=['POST'])
+@admin_required
+def api_admin_secret_regenerate():
+    auth = request.authorization
+    requester = get_user(auth.username)
+    if not requester or requester.role != 'owner':
+        return jsonify({'success': False, 'error': 'Только владелец'})
+    data = request.json or {}
+    username = data.get('username', '').lower().strip().replace('@', '')
+    user = get_user(username)
+    if not user or user.role not in ['owner', 'admin', 'moderator']:
+        return jsonify({'success': False, 'error': 'Не найден или не админ'})
+    _, user.admin_secret_hash, user.admin_secret_plain = generate_admin_secret()
+    db.session.commit()
+    return jsonify({'success': True, 'secret': user.admin_secret_plain})
+
+
+@app.route('/api/whoami', methods=['POST'])
+@admin_required
+def api_whoami():
+    auth = request.authorization
+    user = get_user(auth.username)
+    if not user:
+        return jsonify({'error': 'Not found'})
+    return jsonify({'username': user.username, 'role': user.role})
+
+
+@app.route('/api/invite_codes', methods=['POST'])
+@admin_required
+def api_invite_codes():
+    codes = InviteCode.query.order_by(InviteCode.created_at.desc()).limit(50).all()
+    return jsonify({
+        'codes': [{
+            'code': c.code,
+            'created_by': c.created_by,
+            'used_by': c.used_by,
+            'created_at': c.created_at,
+        } for c in codes]
+    })
+
+
+@app.route('/api/invite_codes/generate', methods=['POST'])
+@admin_required
+def api_invite_generate():
+    auth = request.authorization
+    data = request.json or {}
+    count = min(int(data.get('count', 1)), 20)
+    codes = []
+    for _ in range(count):
+        code = secrets.token_hex(4).upper()[:8]
+        ic = InviteCode(code=code, created_by=auth.username)
+        db.session.add(ic)
+        codes.append(code)
+    db.session.commit()
+    return jsonify({'success': True, 'codes': codes})
+
+
+@app.route('/api/news', methods=['POST'])
+@admin_required
+def api_news():
+    data = request.json or {}
+    text = data.get('text', '').strip()
+    if not text:
+        return jsonify({'success': False, 'error': 'Пустой текст'})
+    if len(text) > 5000:
+        return jsonify({'success': False, 'error': 'Максимум 5000 символов'})
+    auth = request.authorization
+    user = get_user(auth.username)
+    if not user:
+        return jsonify({'success': False, 'error': 'Админ не найден'})
+    msg = Message(
+        room='Новости',
+        sender_id=user.id,
+        text=text,
+        created_at=time.time(),
+    )
+    db.session.add(msg)
+    db.session.commit()
+    socketio.emit('message', msg.to_dict(), room='Новости')
+    return jsonify({'success': True})
+
+
+@app.route('/api/messages/search', methods=['POST'])
+@admin_required
+def api_messages_search():
+    data = request.json or {}
+    query = data.get('query', '').strip().lower()
+    author = data.get('author', '').strip().lower()
+    room = data.get('room', '')
+
+    msgs = Message.query.filter_by(is_deleted=False)
+    if room:
+        msgs = msgs.filter(Message.room == room)
+    if author:
+        user = get_user(author)
+        if user:
+            msgs = msgs.filter(Message.sender_id == user.id)
+        else:
+            return jsonify({'messages': []})
+    if query:
+        msgs = msgs.filter(Message.text.ilike(f'%{query}%'))
+
+    msgs = msgs.order_by(Message.created_at.desc()).limit(50).all()
+    return jsonify({'messages': [m.to_dict() for m in msgs]})
+
+
+@app.route('/api/messages/delete', methods=['POST'])
+@admin_required
+def api_messages_delete():
+    data = request.json or {}
+    msg_id = data.get('msg_id', 0)
+    msg = Message.query.get(msg_id)
+    if not msg:
+        return jsonify({'success': False, 'error': 'Не найдено'})
+    msg.is_deleted = True
+    db.session.commit()
+    socketio.emit('message_deleted', {'msg_id': msg_id}, room=msg.room)
+    return jsonify({'success': True})
+
 
 @app.route('/admin')
+@admin_required
 def admin_panel():
-    auth = request.authorization
-    if not auth:
-        return ('Forbidden', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
-    un = auth.username.lower()
-    pw = auth.password
-    users = load_users()
-    if un not in users or not verify_password(pw, users[un].get('pass', '')):
-        return ('Wrong', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
-    if get_role(un) not in ['owner', 'admin', 'moderator']:
-        return ('Forbidden', 403)
-    msgs = load_messages()
-    general = [m for m in msgs if m.get('room') == 'Общий'][-10:][::-1]
-    users_list = []
-    for uname, d in load_users().items():
-        users_list.append({
-            'username': uname,
-            'display_name': d.get('display_name',''),
-            'role': d.get('role','user'),
-            'xp': d.get('xp', 0),
-            'legendary': d.get('legendary', False),
-            'friends': len(d.get('friends',[])),
-            'requests': len(d.get('requests',[]))
-        })
-    is_owner = get_role(un) == 'owner'
-    can_manage_roles = get_role(un) in ['owner', 'admin']
-    can_manage_invites = get_role(un) in ['owner', 'admin']
-    can_delete_user = get_role(un) == 'owner'
-    html = '''<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>CAT Admin</title><style>
-    body{background:#0d1117;color:#e2e8f0;font-family:sans-serif;padding:30px}
-    h1{background:linear-gradient(135deg,#7c5cfc,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-    .stats{display:flex;gap:20px;margin:20px 0}
-    .stat-card{background:#161b22;padding:20px;border-radius:16px;border:1px solid rgba(255,255,255,0.06);flex:1;text-align:center}
-    .stat-value{font-size:2rem;font-weight:900;color:#7c5cfc}
-    .stat-label{font-size:0.8rem;color:#94a3b8}
-    table{width:100%;border-collapse:collapse;margin-top:20px;background:#161b22;border-radius:16px;overflow:hidden}
-    th{background:#7c5cfc;padding:12px 16px;text-align:left;font-size:0.8rem;text-transform:uppercase}
-    td{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04)}
-    tr:hover{background:rgba(255,255,255,0.02)}
-    .btn{padding:6px 14px;border-radius:8px;border:none;cursor:pointer;font-size:0.75rem;font-weight:600;margin:2px}
-    .btn-danger{background:#ef4444;color:white}
-    .btn-sm{background:#7c5cfc;color:white}
-    .badge{padding:3px 10px;border-radius:20px;font-size:0.7rem;font-weight:700}
-    .badge-owner{background:#f59e0b;color:#0d1117}
-    .badge-admin{background:#ef4444;color:white}
-    .badge-mod{background:#10b981;color:white}
-    .badge-user{background:#94a3b8;color:#0d1117}
-    .section{margin-top:30px}
-    .section h2{font-size:1rem;color:#94a3b8;margin-bottom:10px}
-    .msg-item{background:#161b22;padding:10px 16px;border-radius:8px;margin:5px 0;font-size:0.85rem}
-    select{background:#161b22;color:white;border:1px solid rgba(255,255,255,0.1);padding:4px 8px;border-radius:6px}
-    .user-info{color:#f59e0b;margin-bottom:20px}
-    </style></head><body><h1>⚡ CAT Admin Panel</h1><div class="user-info">Вы вошли как: @''' + html_escape(un) + ''' (''' + {'owner':'Владелец','admin':'Админ','moderator':'Модер'}.get(get_role(un),'') + ''')</div>
-    <div class="stats"><div class="stat-card"><div class="stat-value">''' + str(len(users_list)) + '''</div><div class="stat-label">Пользователей</div></div>
-    <div class="stat-card"><div class="stat-value">''' + str(len(msgs)) + '''</div><div class="stat-label">Сообщений</div></div></div>
-    <div class="section"><h2>👥 Пользователи</h2><table><tr><th>Username</th><th>Имя</th><th>Роль</th><th>XP</th><th>Друзья</th><th>Запросы</th>'''
-    if can_manage_roles: 
-        html += '<th>Действия</th>'
-    html += '</tr>'
-    for u in users_list:
-        bc = 'badge-' + ('owner' if u['role']=='owner' else 'admin' if u['role']=='admin' else 'mod' if u['role']=='moderator' else 'user')
-        rn = {'owner':'Владелец','admin':'Админ','moderator':'Модер','user':'Пользователь'}.get(u['role'],u['role'])
-        html += f'<tr><td>@{html_escape(u["username"])}</td><td>{html_escape(u["display_name"])}</td><td><span class="badge {bc}">{html_escape(rn)}</span></td><td>{u["xp"]}</td><td>{u["friends"]}</td><td>{u["requests"]}</td>'
-        if u['role'] == 'owner':
-            html += '<td>'
-            if can_manage_roles:
-                html += f' <input type="number" id="xpInput-{html_escape(u["username"])}" min="1" value="1" style="width:50px;background:#0d1117;color:white;border:1px solid rgba(255,255,255,0.1);padding:4px;border-radius:6px;">'
-                html += f' <button class="btn btn-sm" onclick="addXp(\'{html_escape(u["username"])}\')">➕XP</button>'
-                if is_owner:
-                    status = '★' if u.get('legendary') else '☆'
-                    html += f' <button class="btn btn-sm" onclick="setLegendary(\'{html_escape(u["username"])}\')" style="background:#f59e0b;color:#0d1117;">{status}</button>'
-            html += '</td>'
-        elif can_manage_roles:
-            html += '<td>'
-            html += f'<select onchange="setRole(\'{html_escape(u["username"])}\',this.value)">'
-            html += f'<option value="user" {"selected" if u["role"]=="user" else ""}>Пользователь</option>'
-            html += f'<option value="moderator" {"selected" if u["role"]=="moderator" else ""}>Модератор</option>'
-            if is_owner:
-                html += f'<option value="admin" {"selected" if u["role"]=="admin" else ""}>Админ</option>'
-            html += '</select>'
-            html += f' <input type="number" id="xpInput-{html_escape(u["username"])}" min="1" value="1" style="width:50px;background:#0d1117;color:white;border:1px solid rgba(255,255,255,0.1);padding:4px;border-radius:6px;">'
-            html += f' <button class="btn btn-sm" onclick="addXp(\'{html_escape(u["username"])}\')">➕XP</button>'
-            if is_owner:
-                status = '★' if u.get('legendary') else '☆'
-                html += f' <button class="btn {"btn-sm"}" onclick="setLegendary(\'{html_escape(u["username"])}\')" style="background:#f59e0b;color:#0d1117;">{status}</button>'
-            if can_delete_user:
-                html += f' <button class="btn btn-danger" onclick="deleteUser(\'{html_escape(u["username"])}\')">Удалить</button>'
-            html += '</td>'
-        html += '</tr>'
-    html += '</table></div><div class="section"><h2>📝 Сообщения (модерация)</h2>'
-    for m in general:
-        msg_user = m.get('username','')
-        msg_text = m.get('text','')[:100]
-        msg_ts = str(m.get('timestamp',''))
-        html += f'<div class="msg-item"><b>@{html_escape(msg_user)}</b>: {html_escape(msg_text)} <button class="btn btn-sm" onclick="deleteMsg(\'{html_escape(msg_ts)}\')" style="float:right;">✕</button></div>'
-    html += '</div>'
-    if can_manage_invites:
-        invites_data = load_invites()
-        total_invites = len(invites_data)
-        used_invites = sum(1 for v in invites_data.values() if v.get('used_by'))
-        html += f'<div class="section"><h2>🔑 Инвайт-коды</h2><div class="stats"><div class="stat-card"><div class="stat-value">{total_invites}</div><div class="stat-label">Всего</div></div><div class="stat-card"><div class="stat-value">{total_invites - used_invites}</div><div class="stat-label">Активных</div></div></div>'
-        html += '<button class="btn btn-sm" onclick="createInvite()" style="background:#7c5cfc;color:white;border:none;padding:10px 20px;border-radius:10px;cursor:pointer;font-weight:600;">➕ Создать код</button>'
-        html += '<div id="newCodeDisplay" style="margin-top:15px;font-size:1.2rem;font-weight:900;color:#10b981;display:none;"></div>'
-        html += '<table style="margin-top:15px;"><tr><th>Код</th><th>Создал</th><th>Статус</th></tr>'
-        for c, v in sorted(invites_data.items(), key=lambda x: x[1].get('created_at', 0), reverse=True)[:50]:
-            status = f'<span style="color:#ef4444;">Использован @{html_escape(v["used_by"])}</span>' if v.get('used_by') else '<span style="color:#10b981;">Активен</span>'
-            html += f'<tr><td style="font-family:monospace;font-weight:700;">{html_escape(c)}</td><td>@{html_escape(v.get("created_by","?"))}</td><td>{status}</td></tr>'
-        html += '</table></div>'
-    if can_manage_invites:
-        reset_stub_users = [u for u, d in load_users().items() if d.get('pass') == 'RESET_NEEDED']
-        html += '<div class="section"><h2>🔐 Сброс пароля</h2>'
-        if reset_stub_users:
-            html += '<p style="color:#94a3b8;font-size:0.85rem;">Пользователям ниже требуется сброс пароля:</p>'
-            html += '<table><tr><th>Username</th><th>Действие</th></tr>'
-            for u in reset_stub_users:
-                html += '<tr><td>@' + html_escape(u) + '</td><td><button class="btn btn-sm" onclick="generateReset('' + html_escape(u) + '')" style="background:#f59e0b;color:#0d1117;">🔑 Сгенерировать код</button></td></tr>'
-            html += '</table>'
-        html += '<p style="margin-top:10px;"><input type="text" id="resetUsernameInput" placeholder="username" style="padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#0d1117;color:white;width:200px;"> <button class="btn btn-sm" onclick="generateReset(document.getElementById(\'resetUsernameInput\').value)" style="background:#f59e0b;color:#0d1117;">🔑 Сбросить пароль</button></p>'
-        html += '<div id="resetCodeDisplay" style="margin-top:10px;font-size:1.3rem;font-weight:900;color:#10b981;display:none;"></div>'
-        html += '</div>'
-    html += '<script>'
-    if can_manage_invites:
-        html += 'function createInvite(){fetch("/api/invite/create",{method:"POST"}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById("newCodeDisplay").textContent="\\uD83C\\uDF89 "+d.code;document.getElementById("newCodeDisplay").style.display="block";setTimeout(()=>location.reload(),2000)}else{alert(d.error)}})}'
-    html += 'function deleteUser(un){if(!confirm("\\u0423\\u0434\\u0430\\u043B\\u0438\\u0442\\u044C @"+un+"?"))return;fetch("/admin/delete/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
-    html += 'function setRole(un,r){fetch("/admin/setrole/"+un+"/"+r,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
-    html += 'function deleteMsg(ts){fetch("/admin/deletemsg/"+ts,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
-    html += 'function addXp(un){var am=document.getElementById("xpInput-"+un).value;fetch("/admin/addxp/"+un+"/"+am,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
-    html += 'function setLegendary(un){fetch("/admin/setlegendary/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{alert(d.message);location.reload()})}'
-    html += 'function generateReset(un){fetch("/admin/generate_reset/"+un,{method:"POST"}).then(r=>r.json()).then(d=>{if(d.code){document.getElementById("resetCodeDisplay").textContent="\U0001F511 "+d.code;document.getElementById("resetCodeDisplay").style.display="block";setTimeout(()=>location.reload(),3000)}else{alert(d.error||"\u041e\u0448\u0438\u0431\u043a\u0430")}})}'
-    html += '</script></body></html>'
-    return html
+    return render_template('admin.html')
 
-@app.route('/admin/delete/<username>', methods=['POST'])
-def admin_delete_user(username):
-    if get_role(request.authorization.username.lower() if request.authorization else '') not in ['owner','admin']: 
-        return {'message':'Нет прав'}
-    un = username.lower()
-    users = load_users()
-    users.pop(un, None)
-    save_db('users', users)
-    return {'message': f'Пользователь @{un} удалён'}
 
-@app.route('/admin/addxp/<username>/<amount>', methods=['POST'])
-def admin_add_xp(username, amount):
-    requester_un = request.authorization.username.lower() if request.authorization else ''
-    requester_role = get_role(requester_un)
-    if requester_role not in ['owner', 'admin']:
-        return {'message': 'Нет прав'}
-    un = username.lower()
-    try:
-        xp_amount = int(amount)
-        if xp_amount <= 0:
-            return {'message': 'XP должно быть больше 0'}
-    except ValueError:
-        return {'message': 'Некорректное количество XP'}
-    users = load_users()
-    if un in users:
-        users[un].setdefault('xp', 0)
-        users[un]['xp'] = min(users[un]['xp'] + xp_amount, MAX_XP)
-        save_db('users', users)
-        notify_user(un, 'xp_awarded', {'amount': xp_amount, 'total': users[un]['xp']})
-        return {'message': f'@{un} получил {xp_amount} XP (всего: {users[un]["xp"]})'}
-    return {'message': 'Пользователь не найден'}
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(UPLOADS_DIR, filename)
 
-@app.route('/admin/setlegendary/<username>', methods=['POST'])
-def admin_set_legendary(username):
-    requester_un = request.authorization.username.lower() if request.authorization else ''
-    requester_role = get_role(requester_un)
-    if requester_role != 'owner':
-        return {'message': 'Только Владелец может выдавать легендарный статус'}
-    un = username.lower()
-    users = load_users()
-    if un in users:
-        users[un]['legendary'] = not users[un].get('legendary', False)
-        save_db('users', users)
-        status = 'присвоен' if users[un]['legendary'] else 'снят'
-        notify_user(un, 'legendary_update', {'legendary': users[un]['legendary']})
-        return {'message': f'@{un} — легендарный статус {status}'}
-    return {'message': 'Пользователь не найден'}
 
-@app.route('/admin/setrole/<username>/<role>', methods=['POST'])
-def admin_set_role(username, role):
-    requester_un = request.authorization.username.lower() if request.authorization else ''
-    requester_role = get_role(requester_un)
-    if requester_role not in ['owner', 'admin']:
-        return {'message': 'Нет прав'}
-    un = username.lower()
-    if requester_role == 'admin':
-        if un == requester_un:
-            return {'message': 'Админ не может изменить свою роль'}
-        if get_role(un) in ['owner', 'admin']:
-            return {'message': 'Админ не может изменить роль другого админа'}
-        if role not in ['user', 'moderator']:
-            return {'message': 'Админ может назначить только роль Модератора'}
-    if role not in ['user', 'moderator', 'admin', 'owner']:
-        return {'message': 'Некорректная роль'}
-    users = load_users()
-    if un in users:
-        users[un]['role'] = role
-        save_db('users', users)
-        if role in ['moderator', 'admin', 'owner']:
-            award_achievement(un, 'dictator')
-        notify_user(un, 'role_changed', {'role': role})
-    return {'message': f'Роль @{un} изменена на {role}'}
-
-@app.route('/admin/deletemsg/<timestamp>', methods=['POST'])
-def admin_delete_msg(timestamp):
-    requester_un = request.authorization.username.lower() if request.authorization else ''
-    requester_role = get_role(requester_un)
-    if requester_role not in ['owner', 'admin', 'moderator']:
-        return {'message': 'Нет прав'}
-    msgs = load_messages()
-    target_msg = None
-    for m in msgs:
-        if str(m.get('timestamp')) == str(timestamp) or str(m.get('id')) == str(timestamp):
-            target_msg = m
+@socketio.on('disconnect')
+def handle_disconnect():
+    for un, sid in list(user_sessions.items()):
+        if sid == request.sid:
+            del user_sessions[un]
+            user = get_user(un)
+            if user:
+                user.online = False
+                user.last_seen = time.time()
+                db.session.commit()
+                friends = get_online_friends(un)
+                for f in friends:
+                    notify_user(f['username'], 'friend_online', {'username': un, 'online': False})
             break
-    if requester_role == 'moderator':
-        if not target_msg or target_msg.get('room') != 'Общий':
-            return {'message': 'Модератор может удалять только сообщения из Общего чата'}
-    msgs = [m for m in msgs if str(m.get('timestamp')) != str(timestamp) and str(m.get('id')) != str(timestamp)]
-    save_db('messages', msgs)
-    return {'message': 'Сообщение удалено'}
 
 
+# ========== MAIN ==========
 
-@app.route('/admin/generate_reset/<username>', methods=['POST'])
-def admin_generate_reset(username):
-    auth = request.authorization
-    if not auth:
-        return {'code': None, 'error': 'Требуется авторизация'}
-    requester_un = auth.username.lower()
-    requester_pw = auth.password
-    users = load_users()
-    if requester_un not in users or not verify_password(requester_pw, users[requester_un].get('pass', '')):
-        return {'code': None, 'error': 'Неверные данные авторизации'}
-    requester_role = get_role(requester_un)
-    if requester_role not in ['owner', 'admin']:
-        return {'code': None, 'error': 'Нет прав'}
-    un = username.lower().replace('@', '')
-    if un not in users:
-        return {'code': None, 'error': 'Пользователь не найден'}
-    code = secrets.token_hex(4).upper()
-    codes = load_reset_codes()
-    codes[code] = {'username': un, 'created_at': time.time(), 'expires_at': time.time() + 86400, 'used': False}
-    save_reset_codes(codes)
-    return {'code': code, 'error': None}
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-
-# ========== ДОСТИЖЕНИЯ ==========
-ACHIEVEMENTS = {
-    'first_msg': {'icon': '🐱', 'name': 'Первый мяу', 'desc': 'Отправить первое сообщение в чат', 'xp': 25},
-    'first_friend': {'icon': '🤝', 'name': 'Первый друг', 'desc': 'Добавить одного друга', 'xp': 25},
-    'soul_company': {'icon': '🎉', 'name': 'Душа компании', 'desc': 'Иметь 5 друзей одновременно', 'xp': 50},
-    'talkative': {'icon': '💬', 'name': 'Общительный', 'desc': 'Написать в общий канал сегодня', 'xp': 25},
-    'daily_login': {'icon': '📅', 'name': 'Ежедневный вход', 'desc': 'Зайти в чат сегодня', 'xp': 25},
-    'weekly_marathon': {'icon': '🔥', 'name': 'Недельный марафон', 'desc': 'Заходить 7 дней подряд', 'xp': 100},
-    'bio': {'icon': '✏️', 'name': 'Биограф', 'desc': 'Заполнить описание профиля', 'xp': 25},
-    'avatar': {'icon': '🖼️', 'name': 'Аватар', 'desc': 'Загрузить собственное фото', 'xp': 25},
-    'first_spark': {'icon': '✨', 'name': 'Первый огонёк', 'desc': 'Отправить 10 сообщений подряд в одном чате', 'xp': 10},
-    'night_chatter': {'icon': '🌙', 'name': 'Ночной чатер', 'desc': 'Написать сообщение с 00:00 до 5:00', 'xp': 25},
-    'friend_specialist': {'icon': '🤝', 'name': 'Специалист по связям', 'desc': 'Добавить 15 друзей', 'xp': 30},
-    'media_master': {'icon': '📸', 'name': 'Медиа-мастер', 'desc': 'Отправить 10 фото за 1 день', 'xp': 10},
-    'sprinter': {'icon': '🏃', 'name': 'Спринтер', 'desc': 'Написать 100 сообщений за 24 часа', 'xp': 20},
-    'dictator': {'icon': '👑', 'name': 'Диктатор', 'desc': 'Стать модератором', 'xp': 150},
-    'pioneer': {'icon': '🏆', 'name': 'Первопроходец', 'desc': 'Стать одним из первых 50 пользователей', 'xp': 300},
-}
-
-def award_achievement(username, ach_id):
-    users = load_users()
-    if username not in users:
-        return
-    user = users[username]
-    if not user.get('telegram_verified') and not user.get('verified_by'):
-        return
-    user.setdefault('achievements', [])
-    user.setdefault('xp', 0)
-    if any(a['id'] == ach_id for a in user['achievements']):
-        return
-    ach = ACHIEVEMENTS.get(ach_id)
-    if not ach:
-        return
-    user['achievements'].append({'id': ach_id, 'earned': time.time()})
-    user['xp'] = min(user['xp'] + ach['xp'], MAX_XP)
-    save_user(username, user)
-    notify_user(username, 'achievement_unlocked', {'id': ach_id, 'name': ach['name'], 'xp': ach['xp']})
-
-def check_daily_login(username):
-    users = load_users()
-    if username not in users:
-        return
-    user = users[username]
-    today = time.strftime('%Y-%m-%d')
-    user.setdefault('login_dates', [])
-    if today not in user['login_dates']:
-        user['login_dates'].append(today)
-        if len(user['login_dates']) > 30:
-            user['login_dates'] = user['login_dates'][-30:]
-        save_user(username, user)
-    if len(user['login_dates']) >= 7:
-        award_achievement(username, 'weekly_marathon')
-    award_achievement(username, 'daily_login')
-
-# ========== ИНВАЙТ-КОДЫ ==========
-RESET_CODES_FILE = os.path.join(DATA_DIR, "reset_codes.json")
-
-def load_reset_codes():
-    if os.path.exists(RESET_CODES_FILE):
-        try:
-            with open(RESET_CODES_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            pass
-    return {}
-
-def save_reset_codes(data):
-    with open(RESET_CODES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-INVITE_FILE = os.path.join(DATA_DIR, "invite_codes.json")
-
-def load_invites():
-    if os.path.exists(INVITE_FILE):
-        try:
-            with open(INVITE_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            pass
-    return {}
-
-def save_invites(data):
-    with open(INVITE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def generate_invite_code():
-    return secrets.token_hex(4).upper()
-
-@app.route('/api/invite/create', methods=['POST'])
-def api_create_invite():
-    auth = request.authorization
-    if not auth:
-        return {'ok': False, 'error': 'Требуется авторизация'}
-    un = auth.username.lower()
-    pw = auth.password
-    users = load_users()
-    if un not in users or not verify_password(pw, users[un].get('pass', '')):
-        return {'ok': False, 'error': 'Неверные данные'}
-    if get_role(un) not in ['owner', 'admin']:
-        return {'ok': False, 'error': 'Только админы могут создавать коды'}
-    invites = load_invites()
-    code = generate_invite_code()
-    while code in invites:
-        code = generate_invite_code()
-    invites[code] = {
-        'created_by': un,
-        'created_at': time.time(),
-        'used_by': None
-    }
-    save_invites(invites)
-    return {'ok': True, 'code': code}
-
-@app.route('/api/invite/verify', methods=['POST'])
-def api_verify_invite():
-    try:
-        data = request.get_json()
-        un = data.get('username', '').lower()
-        code = data.get('code', '').strip().upper()
-        if not un or not code:
-            return {'ok': False, 'error': 'Не указаны данные'}
-        invites = load_invites()
-        if code not in invites:
-            return {'ok': False, 'error': 'Неверный код'}
-        entry = invites[code]
-        if entry.get('used_by'):
-            return {'ok': False, 'error': 'Код уже использован'}
-        users = load_users()
-        if un not in users:
-            return {'ok': False, 'error': 'Пользователь не найден'}
-        users[un]['telegram_verified'] = True
-        users[un]['verified_by'] = 'invite'
-        save_db('users', users)
-        entry['used_by'] = un
-        save_invites(invites)
-        return {'ok': True}
-    except Exception as e:
-        return {'ok': False, 'error': str(e)}
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    socketio.run(app, host='0.0.0.0', port=port)
+    socketio.run(app, host='0.0.0.0', port=3000, debug=False, allow_unsafe_werkzeug=True)
