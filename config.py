@@ -16,3 +16,4 @@ UPLOAD_MAX_SIZE = 5 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'png', 'jpeg', 'jpg', 'gif', 'webp'}
 
 ROLES = {'krembovan': 'owner'}
+SITE_URL = 'https://catmes.ru'

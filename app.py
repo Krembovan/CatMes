@@ -1,7 +1,8 @@
-import os, time, json, base64, uuid, hashlib, secrets
+import os, time, json, base64, uuid, hashlib, secrets, html, re
+from functools import wraps
 from flask import Flask, request, render_template, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
-from config import SECRET_KEY, SQLALCHEMY_DATABASE_URI, UPLOADS_DIR, RATE_LIMIT, MAX_XP, UPLOAD_MAX_SIZE, ALLOWED_EXTENSIONS, ROLES
+from config import SECRET_KEY, SQLALCHEMY_DATABASE_URI, UPLOADS_DIR, RATE_LIMIT, MAX_XP, UPLOAD_MAX_SIZE, ALLOWED_EXTENSIONS, ROLES, SITE_URL
 from models import db, User, Friendship, Message, Reaction, Group, GroupMember, Achievement, Notification, ResetCode, InviteCode, hash_password, verify_password, generate_admin_secret
 from modules.achievements import ACHIEVEMENTS, award_achievement
 
@@ -12,11 +13,25 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = UPLOAD_MAX_SIZE
 
 db.init_app(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', manage_session=False)
+socketio = SocketIO(app, cors_allowed_origins=SITE_URL, async_mode='threading', manage_session=False)
 
 user_sessions = {}
 last_action = {}
 consecutive_msgs = {}
+auth_attempts = {}
+
+def require_auth(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        session_user = get_user_by_sid(request.sid)
+        if not session_user:
+            emit('error_msg', {'text': 'Ошибка авторизации'})
+            return
+        return f(*args, **kwargs)
+    return wrapper
+
+def get_session_user():
+    return get_user_by_sid(request.sid)
 
 with app.app_context():
     db.create_all()
@@ -25,11 +40,11 @@ with app.app_context():
         if user:
             user.role = role
             if not user.admin_secret_hash:
-                _, user.admin_secret_hash, user.admin_secret_plain = generate_admin_secret()
+                raw, user.admin_secret_hash, _ = generate_admin_secret()
             db.session.commit()
     # Generate secrets for existing admins who don't have one
     for admin in User.query.filter(User.role.in_(['owner', 'admin', 'moderator']), User.admin_secret_hash == '').all():
-        _, admin.admin_secret_hash, admin.admin_secret_plain = generate_admin_secret()
+        _, admin.admin_secret_hash, _ = generate_admin_secret()
         db.session.commit()
 
 
@@ -124,6 +139,13 @@ def handle_connect():
 
 @socketio.on('auth')
 def handle_auth(data):
+    ip = request.remote_addr or 'unknown'
+    now = time.time()
+    attempts = auth_attempts.get(ip, [])
+    attempts = [t for t in attempts if now - t < 900]
+    if len(attempts) >= 10:
+        emit('auth_result', {'success': False, 'error': 'Слишком много попыток. Подождите 15 минут.'})
+        return
     action = data.get('action', 'login')
     un = data.get('username', '').strip().lower().replace('@', '')
     dn = data.get('display_name', '').strip()
@@ -168,9 +190,11 @@ def handle_auth(data):
     else:
         user = get_user(un)
         if not user:
+            auth_attempts.setdefault(ip, []).append(time.time())
             emit('auth_result', {'success': False, 'error': 'Пользователь не найден'})
             return
         if not verify_password(pwd, user.password_hash):
+            auth_attempts.setdefault(ip, []).append(time.time())
             emit('auth_result', {'success': False, 'error': 'Неверный пароль'})
             return
 
@@ -188,6 +212,7 @@ def handle_auth(data):
 
 
 @socketio.on('join_room')
+@require_auth
 def handle_join_room(data):
     room = data.get('room', 'Общий')
     join_room(room)
@@ -197,23 +222,24 @@ def handle_join_room(data):
 
 
 @socketio.on('leave')
+@require_auth
 def handle_leave(data):
     room = data.get('room', '')
     leave_room(room)
 
 
 @socketio.on('message')
+@require_auth
 def handle_message(data):
     room = data.get('room', 'Общий')
     text = data.get('text', '').strip()
     image_data = data.get('image', '').strip()
     voice_data = data.get('voice', '').strip()
     reply_to = data.get('reply_to', 0)
-    username = data.get('username', '')
-
-    user = get_user(username)
+    user = get_session_user()
     if not user:
         return
+    username = user.username
     if not check_rate(username):
         emit('error_msg', {'text': 'Слишком часто. Подождите.'})
         return
@@ -223,6 +249,7 @@ def handle_message(data):
         return
     if text and len(text) > 5000:
         return
+    text = re.sub(r'<[^>]*>', '', text)[:5000] if text else ''
 
     image_url = save_image(image_data) if image_data else ''
     voice_url = save_image(voice_data) if voice_data else ''
@@ -281,10 +308,10 @@ def handle_message(data):
 
 
 @socketio.on('delete_message')
+@require_auth
 def handle_delete_message(data):
     msg_id = data.get('msg_id', 0)
-    username = data.get('username', '').lower()
-    user = get_user(username)
+    user = get_session_user()
     if not user:
         return
     msg = Message.query.get(msg_id)
@@ -306,13 +333,14 @@ def handle_delete_message(data):
 
 
 @socketio.on('add_reaction')
+@require_auth
 def handle_add_reaction(data):
     msg_id = data.get('msg_id', 0)
     emoji = data.get('emoji', '').strip()
-    username = data.get('username', '').lower()
-    user = get_user(username)
+    user = get_session_user()
     if not user or not emoji:
         return
+    username = user.username
     msg = Message.query.get(msg_id)
     if not msg or msg.is_deleted:
         return
@@ -330,20 +358,26 @@ def handle_add_reaction(data):
 
 
 @socketio.on('typing')
+@require_auth
 def handle_typing(data):
     room = data.get('room', '')
-    username = data.get('username', '')
+    user = get_session_user()
+    if not user:
+        return
+    username = user.username
     if room and username:
         socketio.emit('user_typing', {'username': username, 'room': room}, room=room, include_self=False)
 
 
 @socketio.on('get_users')
+@require_auth
 def handle_get_users():
     users = User.query.order_by(User.online.desc(), User.username).all()
     emit('users_list', [u.to_dict() for u in users])
 
 
 @socketio.on('get_profile')
+@require_auth
 def handle_get_profile(data):
     target = data.get('username', '').lower()
     user = get_user(target)
@@ -354,11 +388,12 @@ def handle_get_profile(data):
 
 
 @socketio.on('update_profile')
+@require_auth
 def handle_update_profile(data):
-    username = data.get('username', '').lower()
-    user = get_user(username)
+    user = get_session_user()
     if not user:
         return
+    username = user.username
     if data.get('display_name', '').strip():
         user.display_name = data['display_name'].strip()
     if 'bio' in data:
@@ -394,8 +429,12 @@ def handle_update_profile(data):
 
 
 @socketio.on('send_friend_request')
+@require_auth
 def handle_friend_request(data):
-    my_un = data.get('my_username', '').strip().lower()
+    me = get_session_user()
+    if not me:
+        return
+    my_un = me.username
     target_un = data.get('target_username', '').strip().lower().replace('@', '')
     if not target_un:
         emit('friend_msg', {'text': 'Введите имя', 'type': 'error'})
@@ -403,9 +442,8 @@ def handle_friend_request(data):
     if not check_rate(my_un):
         emit('friend_msg', {'text': 'Слишком часто', 'type': 'error'})
         return
-    me = get_user(my_un)
     target = get_user(target_un)
-    if not me or not target:
+    if not target:
         emit('friend_msg', {'text': 'Пользователь не найден', 'type': 'error'})
         return
     if target.id == me.id:
@@ -436,13 +474,16 @@ def handle_friend_request(data):
 
 
 @socketio.on('friend_response')
+@require_auth
 def handle_friend_response(data):
-    my_un = data.get('my_username', '').strip().lower()
+    me = get_session_user()
+    if not me:
+        return
+    my_un = me.username
     target_un = data.get('target_username', '').strip().lower()
     accept = data.get('accept', True)
-    me = get_user(my_un)
     target = get_user(target_un)
-    if not me or not target:
+    if not target:
         return
     friendship = Friendship.query.filter(
         (Friendship.user_id == target.id) & (Friendship.friend_id == me.id) & (Friendship.status == 'pending')
@@ -475,12 +516,15 @@ def handle_friend_response(data):
 
 
 @socketio.on('remove_friend')
+@require_auth
 def handle_remove_friend(data):
-    my_un = data.get('my_username', '').strip().lower()
+    me = get_session_user()
+    if not me:
+        return
+    my_un = me.username
     target_un = data.get('target_username', '').strip().lower()
-    me = get_user(my_un)
     target = get_user(target_un)
-    if not me or not target:
+    if not target:
         return
     friendship = Friendship.query.filter(
         ((Friendship.user_id == me.id) & (Friendship.friend_id == target.id)) |
@@ -495,8 +539,12 @@ def handle_remove_friend(data):
 
 
 @socketio.on('get_friends')
+@require_auth
 def handle_get_friends(data):
-    my_un = data.get('username', '').strip().lower()
+    me = get_session_user()
+    if not me:
+        return
+    my_un = me.username
     emit('friends_updated', get_online_friends(my_un))
     emit('friend_requests', get_friend_requests(my_un))
 
@@ -515,22 +563,23 @@ def get_friend_requests(username):
 
 
 @socketio.on('get_rooms')
+@require_auth
 def handle_get_rooms():
-    # Отправляем всем подключенным клиентам
     emit('room_list', {
         'Общий': {'name': 'Общий канал', 'type': 'public', 'icon': '🌍'},
         'Новости': {'name': 'Новости', 'type': 'news', 'icon': '📰'},
-    }, broadcast=True)
+    })
 
 
 # ========== GROUPS ==========
 
 @socketio.on('create_group')
+@require_auth
 def handle_create_group(data):
-    username = data.get('username', '').lower()
-    user = get_user(username)
+    user = get_session_user()
     if not user:
         return
+    username = user.username
     name = data.get('name', '').strip()
     if not name or len(name) > 50:
         emit('error_msg', {'text': 'Название: 1-50 символов'})
@@ -546,11 +595,12 @@ def handle_create_group(data):
 
 
 @socketio.on('get_groups')
+@require_auth
 def handle_get_groups(data):
-    username = data.get('username', '').lower()
-    user = get_user(username)
+    user = get_session_user()
     if not user:
         return
+    username = user.username
     memberships = GroupMember.query.filter_by(user_id=user.id).all()
     groups = {}
     for m in memberships:
@@ -562,11 +612,12 @@ def handle_get_groups(data):
 
 
 @socketio.on('invite_to_group')
+@require_auth
 def handle_invite_to_group(data):
-    username = data.get('username', '').lower()
-    user = get_user(username)
+    user = get_session_user()
     if not user:
         return
+    username = user.username
     group_id = data.get('group_id', 0)
     target = data.get('target', '').lower().replace('@', '')
     group = Group.query.get(group_id)
@@ -588,11 +639,12 @@ def handle_invite_to_group(data):
 
 
 @socketio.on('leave_group')
+@require_auth
 def handle_leave_group(data):
-    username = data.get('username', '').lower()
-    user = get_user(username)
+    user = get_session_user()
     if not user:
         return
+    username = user.username
     group_id = data.get('group_id', 0)
     group = Group.query.get(group_id)
     if not group:
@@ -618,9 +670,9 @@ def handle_leave_group(data):
 # ========== NOTIFICATIONS ==========
 
 @socketio.on('get_notifications')
+@require_auth
 def handle_get_notifications(data):
-    username = data.get('username', '').lower()
-    user = get_user(username)
+    user = get_session_user()
     if not user:
         return
     notifs = Notification.query.filter_by(user_id=user.id).order_by(Notification.created_at.desc()).limit(30).all()
@@ -628,10 +680,14 @@ def handle_get_notifications(data):
 
 
 @socketio.on('mark_notification_read')
+@require_auth
 def handle_mark_notification_read(data):
+    user = get_session_user()
+    if not user:
+        return
     notif_id = data.get('notif_id', 0)
     notif = Notification.query.get(notif_id)
-    if notif:
+    if notif and notif.user_id == user.id:
         notif.read = True
         db.session.commit()
 
@@ -639,12 +695,13 @@ def handle_mark_notification_read(data):
 # ========== INVITE CODES ==========
 
 @socketio.on('verify_invite')
+@require_auth
 def handle_verify_invite(data):
-    username = data.get('username', '').lower()
-    code = data.get('code', '').strip().upper()
-    user = get_user(username)
+    user = get_session_user()
     if not user:
         return
+    username = user.username
+    code = data.get('code', '').strip().upper()
     if user.verified:
         emit('invite_result', {'success': True, 'message': 'Уже верифицирован'})
         return
@@ -661,13 +718,12 @@ def handle_verify_invite(data):
 # ========== PASSWORD RESET ==========
 
 @socketio.on('verify_admin_access')
+@require_auth
 def handle_verify_admin_access(data):
-    username = data.get('username', '').lower()
-    secret = data.get('secret', '')
-    user = get_user(username)
+    user = get_session_user()
     if not user:
-        emit('admin_access_result', {'success': False, 'error': 'Пользователь не найден'})
         return
+    secret = data.get('secret', '')
     if user.role not in ['owner', 'admin', 'moderator']:
         emit('admin_access_result', {'success': False, 'error': 'Нет прав'})
         return
@@ -681,13 +737,16 @@ def handle_verify_admin_access(data):
 
 
 @socketio.on('generate_reset_code')
+@require_auth
 def handle_generate_reset_code(data):
-    username = data.get('username', '').lower()
-    requester = data.get('requester', '').lower()
-    admin = get_user(requester)
-    if not admin or admin.role not in ['owner', 'admin', 'moderator']:
+    user = get_session_user()
+    if not user:
+        return
+    requester = user.username
+    if user.role not in ['owner', 'admin', 'moderator']:
         emit('admin_msg', {'text': 'Нет прав', 'type': 'error'})
         return
+    username = data.get('username', '').lower()
     target = get_user(username)
     if not target:
         emit('admin_msg', {'text': 'Пользователь не найден', 'type': 'error'})
@@ -737,9 +796,12 @@ def handle_reset_password(data):
 # ========== ADMIN ==========
 
 def admin_required(f):
-    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
+        # CSRF check: reject cross-origin requests
+        origin = request.headers.get('Origin', '')
+        if origin and origin.rstrip('/') != SITE_URL.rstrip('/'):
+            return ('CSRF check failed', 403)
         auth = request.authorization
         if not auth:
             return ('Forbidden', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
@@ -888,7 +950,7 @@ def api_user_role(username):
     user.role = new_role
     secret_plain = None
     if new_role in ['owner', 'admin', 'moderator'] and not user.admin_secret_hash:
-        secret_plain, user.admin_secret_hash, user.admin_secret_plain = generate_admin_secret()
+        secret_plain, user.admin_secret_hash, _ = generate_admin_secret()
     if old_role in ['owner', 'admin', 'moderator'] and new_role == 'user':
         user.admin_secret_hash = ''
     db.session.commit()
@@ -953,7 +1015,7 @@ def api_admin_secrets():
             'username': u.username,
             'display_name': u.display_name,
             'role': u.role,
-            'secret': u.admin_secret_plain or '—',
+            'secret': '•••••••• (нажмите "Сбросить" для нового)',
         } for u in admins]
     })
 
@@ -970,9 +1032,9 @@ def api_admin_secret_regenerate():
     user = get_user(username)
     if not user or user.role not in ['owner', 'admin', 'moderator']:
         return jsonify({'success': False, 'error': 'Не найден или не админ'})
-    _, user.admin_secret_hash, user.admin_secret_plain = generate_admin_secret()
+    secret_plain, user.admin_secret_hash, _ = generate_admin_secret()
     db.session.commit()
-    return jsonify({'success': True, 'secret': user.admin_secret_plain})
+    return jsonify({'success': True, 'secret': secret_plain})
 
 
 @app.route('/api/whoami', methods=['POST'])

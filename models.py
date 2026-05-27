@@ -14,7 +14,7 @@ def hash_password(password: str) -> str:
 
 def generate_admin_secret() -> tuple:
     raw = secrets.token_hex(4).upper()[:8]
-    return raw, hash_password(raw), raw
+    return raw, hash_password(raw), ''
 
 
 def verify_password(password: str, hashed: str) -> bool:
